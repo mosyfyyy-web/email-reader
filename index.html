@@ -697,25 +697,32 @@
     }
 
     // ==================== 声音选择 ====================
-    let selectedVoiceURI = (function () { try { return localStorage.getItem('ttsVoice') || ''; } catch (e) { return ''; } })();
+    const VOICE_OPTIONS = [
+      { id: 'nova',     label: '女声 · AI (nova)',     src: 'api' },
+      { id: 'onyx',     label: '男声 · AI (onyx)',     src: 'api' },
+      { id: 'samantha', label: '女声 · Siri (Samantha)', src: 'siri' },
+      { id: 'daniel',   label: '男声 · Siri (Daniel)',   src: 'siri' }
+    ];
+    let voicePref = (function () { try { return localStorage.getItem('voicePref') || 'nova'; } catch (e) { return 'nova'; } })();
 
-    function getSelectedVoice() {
-      if (!selectedVoiceURI || !supportsTts) return null;
-      return speechSynthesis.getVoices().find(v => v.voiceURI === selectedVoiceURI) || null;
+    function findSiriVoice(namePart) {
+      const voices = speechSynthesis.getVoices();
+      const matches = voices.filter(v => v.name && v.name.toLowerCase().includes(namePart) && (v.lang || '').toLowerCase().startsWith('en'));
+      return matches.find(v => /enhanced/i.test(v.name)) || matches[0] || null;
     }
 
     function renderVoices() {
       voiceList.innerHTML = '';
-      TTS_API.voices.forEach(name => {
+      VOICE_OPTIONS.forEach(v => {
         const item = document.createElement('div');
-        item.className = 'voice-item' + (apiVoice === name ? ' active' : '');
-        item.textContent = name;
+        item.className = 'voice-item' + (voicePref === v.id ? ' active' : '');
+        item.textContent = v.label;
         item.addEventListener('click', () => {
-          apiVoice = name;
-          try { localStorage.setItem('ttsApiVoice', name); } catch (e) {}
+          voicePref = v.id;
+          try { localStorage.setItem('voicePref', v.id); } catch (e) {}
           renderVoices();
           voicePop.classList.remove('open');
-          showHint('已切换到：' + name);
+          showHint('已切换：' + v.label);
         });
         voiceList.appendChild(item);
       });
@@ -1041,7 +1048,8 @@
       voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
       enabled: true
     };
-    let apiVoice = (function () { try { return localStorage.getItem('ttsApiVoice') || TTS_API.voice; } catch (e) { return TTS_API.voice; } })();
+    let apiVoice = 'nova';
+    let usingApi = false;
 
     let apiAudio = null;
     let apiChunks = [];
@@ -1127,6 +1135,7 @@
     }
 
     function startApiPlayback() {
+      usingApi = true;
       stopApi();
       apiChunks = buildApiChunks();
       let startIdx = 0;
@@ -1151,6 +1160,7 @@
       updatePlayButton();
     }
     function startFallback() {
+      usingApi = false;
       stopApi();
       if (supportsTts) { try { speechSynthesis.cancel(); } catch (e) {} }
       if (fallbackRAF) cancelAnimationFrame(fallbackRAF);
@@ -1180,24 +1190,26 @@
     function startPlayback() {
       if (!allWords.length) return;
       if (currentWordIndex >= allWords.length - 1) currentWordIndex = 0;
-      if (TTS_API.enabled) { startApiPlayback(); return; }
-      if (!supportsTts) { startFallback(); return; }
+      const vp = VOICE_OPTIONS.find(v => v.id === voicePref) || VOICE_OPTIONS[0];
+      if (vp.src === 'api') {
+        apiVoice = vp.id;
+        startApiPlayback();
+        return;
+      }
+      startSiriPlayback(vp.id);
+    }
 
+    function startSiriPlayback(siriName) {
+      if (!supportsTts) { startFallback(); return; }
       try {
+        usingApi = false;
         speechSynthesis.cancel();
         const startChar = allWords[currentWordIndex].start;
         speechStartChar = startChar;
         utterance = new SpeechSynthesisUtterance(fullText.slice(startChar));
-        const lang = detectLang(fullText);
-        utterance.lang = lang;
-        const selVoice = getSelectedVoice();
-        if (selVoice) {
-          utterance.voice = selVoice;
-          utterance.lang = selVoice.lang;
-        } else {
-          const autoVoice = pickVoice(lang);
-          if (autoVoice) utterance.voice = autoVoice;
-        }
+        utterance.lang = 'en-US';
+        const sv = findSiriVoice(siriName);
+        if (sv) { utterance.voice = sv; utterance.lang = sv.lang; }
         utterance.rate = speed;
         let boundaryFired = false;
         utterance.onboundary = (e) => {
@@ -1224,7 +1236,7 @@
         setTimeout(() => {
           if (mode === 'playing' && !boundaryFired) {
             startFallback();
-            showHint('语音引擎未发声，已切换为视觉播放');
+            showHint('未检测到可用语音，已切换为视觉播放');
           }
         }, 2500);
       } catch (e) {
@@ -1233,7 +1245,7 @@
     }
     function pausePlayback() {
       if (mode !== 'playing') return;
-      if (TTS_API.enabled) { if (apiAudio) apiAudio.pause(); }
+      if (usingApi) { if (apiAudio) apiAudio.pause(); }
       else if (supportsTts) { try { speechSynthesis.pause(); } catch (e) {} }
       else if (fallbackRAF) { cancelAnimationFrame(fallbackRAF); fallbackRAF = null; }
       mode = 'paused';
@@ -1241,7 +1253,7 @@
     }
     function resumePlayback() {
       if (mode !== 'paused') return;
-      if (TTS_API.enabled) { if (apiAudio) apiAudio.play(); mode = 'playing'; }
+      if (usingApi) { if (apiAudio) apiAudio.play(); mode = 'playing'; }
       else if (supportsTts) { try { speechSynthesis.resume(); } catch (e) {} mode = 'playing'; }
       else { startPlayback(); return; }
       updatePlayButton();
@@ -1266,7 +1278,7 @@
     function tryAutoplay() {
       if (!allWords.length) return;
       startPlayback();
-      if (!TTS_API.enabled && supportsTts) {
+      if (!usingApi && supportsTts) {
         setTimeout(() => {
           if (mode === 'playing' && !speechSynthesis.speaking && !speechSynthesis.pending) {
             stopPlayback();
