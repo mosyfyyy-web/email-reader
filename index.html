@@ -728,13 +728,20 @@
         if (/india|indian/.test(n) || lang.startsWith('en-in')) return false;
         return true;
       });
+      function voiceQuality(v) {
+        const n = v.name || '';
+        if (/enhanced/i.test(n)) return 0;      // Siri 增强（最自然）
+        if (/natural|neural/i.test(n)) return 1; // 微软/Azure 神经语音
+        if (/premium/i.test(n)) return 2;
+        if (/siri/i.test(n)) return 3;
+        return 4;
+      }
       filtered.sort((a, b) => {
-        const qa = /enhanced|natural|premium|siri/i.test(a.name) ? 0 : 1;
-        const qb = /enhanced|natural|premium|siri/i.test(b.name) ? 0 : 1;
-        if (qa !== qb) return qa - qb;
+        const d = voiceQuality(a) - voiceQuality(b);
+        if (d !== 0) return d;
         return (a.name || '').localeCompare(b.name || '');
       });
-      filtered = filtered.slice(0, 12);   // 只留前面几个最好的
+      filtered = filtered.slice(0, 2);   // 只留最自然的 1-2 个
 
       filtered.forEach(v => {
         const item = document.createElement('div');
