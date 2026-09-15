@@ -705,64 +705,20 @@
     }
 
     function renderVoices() {
-      const voices = supportsTts ? speechSynthesis.getVoices() : [];
       voiceList.innerHTML = '';
-
-      const def = document.createElement('div');
-      def.className = 'voice-item' + (selectedVoiceURI ? '' : ' active');
-      def.textContent = '自动（最自然）';
-      def.addEventListener('click', () => {
-        selectedVoiceURI = '';
-        try { localStorage.removeItem('ttsVoice'); } catch (e) {}
-        renderVoices();
-        voicePop.classList.remove('open');
-        showHint('使用自动声音');
-      });
-      voiceList.appendChild(def);
-
-      // 只保留自然/舒缓的英语声音，去掉印度等口音
-      let filtered = voices.filter(v => {
-        const lang = (v.lang || '').toLowerCase();
-        if (!lang.startsWith('en')) return false;
-        const n = (v.name || '').toLowerCase();
-        if (/india|indian/.test(n) || lang.startsWith('en-in')) return false;
-        return true;
-      });
-      function voiceQuality(v) {
-        const n = v.name || '';
-        if (/enhanced/i.test(n)) return 0;      // Siri 增强（最自然）
-        if (/natural|neural/i.test(n)) return 1; // 微软/Azure 神经语音
-        if (/premium/i.test(n)) return 2;
-        if (/siri/i.test(n)) return 3;
-        return 4;
-      }
-      filtered.sort((a, b) => {
-        const d = voiceQuality(a) - voiceQuality(b);
-        if (d !== 0) return d;
-        return (a.name || '').localeCompare(b.name || '');
-      });
-      filtered = filtered.slice(0, 2);   // 只留最自然的 1-2 个
-
-      filtered.forEach(v => {
+      TTS_API.voices.forEach(name => {
         const item = document.createElement('div');
-        item.className = 'voice-item' + (selectedVoiceURI === v.voiceURI ? ' active' : '');
-        item.textContent = v.name + ' · ' + v.lang;
+        item.className = 'voice-item' + (apiVoice === name ? ' active' : '');
+        item.textContent = name;
         item.addEventListener('click', () => {
-          selectedVoiceURI = v.voiceURI;
-          try { localStorage.setItem('ttsVoice', v.voiceURI); } catch (e) {}
+          apiVoice = name;
+          try { localStorage.setItem('ttsApiVoice', name); } catch (e) {}
           renderVoices();
           voicePop.classList.remove('open');
-          showHint('已切换到：' + v.name);
+          showHint('已切换到：' + name);
         });
         voiceList.appendChild(item);
       });
-
-      if (!filtered.length) {
-        const empty = document.createElement('div');
-        empty.className = 'voice-item';
-        empty.textContent = '未检测到英语语音，请到系统设置安装';
-        voiceList.appendChild(empty);
-      }
     }
 
     voiceBtn.addEventListener('click', () => {
@@ -1078,8 +1034,115 @@
     }
 
     // ==================== 播放控制 ====================
+    const TTS_API = {
+      url: 'https://shiny-lake-6597.mosyfyyy.workers.dev/v1/audio/speech',
+      model: 'tts-1',
+      voice: 'alloy',
+      voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
+      enabled: true
+    };
+    let apiVoice = (function () { try { return localStorage.getItem('ttsApiVoice') || TTS_API.voice; } catch (e) { return TTS_API.voice; } })();
+
+    let apiAudio = null;
+    let apiChunks = [];
+    let apiChunkIndex = -1;
+    let apiNext = null;
+
+    function buildApiChunks() {
+      const chunks = [];
+      let startWord = 0;
+      let len = 0;
+      for (let i = 0; i < allWords.length; i++) {
+        const w = allWords[i];
+        len += w.text.length + 1;
+        const isEnd = /[。！？!?.…；;]/.test(w.text);
+        if (isEnd && (len >= 30 || i === allWords.length - 1)) {
+          chunks.push({ startWord, endWord: i, text: joinWords(allWords.slice(startWord, i + 1).map(x => x.text)) });
+          startWord = i + 1;
+          len = 0;
+        }
+      }
+      if (startWord < allWords.length) chunks.push({ startWord, endWord: allWords.length - 1, text: joinWords(allWords.slice(startWord).map(x => x.text)) });
+      return chunks;
+    }
+
+    function synthesize(text) {
+      return fetch(TTS_API.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: TTS_API.model, input: text, voice: apiVoice, response_format: 'mp3', speed: speed })
+      }).then(res => { if (!res.ok) throw new Error('TTS ' + res.status); return res.blob(); })
+        .then(blob => URL.createObjectURL(blob));
+    }
+
+    function stopApi() {
+      if (apiAudio) { try { apiAudio.pause(); apiAudio.src = ''; } catch (e) {} apiAudio = null; }
+      apiNext = null;
+      apiChunkIndex = -1;
+    }
+
+    function playChunkAudio(chunk, url) {
+      apiAudio = new Audio(url);
+      const wordCount = chunk.endWord - chunk.startWord + 1;
+      apiAudio.ontimeupdate = () => {
+        if (!apiAudio.duration || mode !== 'playing') return;
+        const ratio = Math.min(1, apiAudio.currentTime / apiAudio.duration);
+        const wi = chunk.startWord + Math.floor(ratio * wordCount);
+        const progress = (wi / allWords.length) * 100;
+        setHighlight(wi, progress);
+        progressBar.value = progress;
+        progressBar.style.setProperty('--progress', progress + '%');
+      };
+      apiAudio.onended = () => { if (mode === 'playing') playApiChunk(); };
+      apiAudio.onerror = () => { if (mode === 'playing') playApiChunk(); };
+      apiAudio.play().catch(() => { if (mode === 'playing') startFallback(); });
+    }
+
+    function playApiChunk() {
+      if (mode !== 'playing') return;
+      apiChunkIndex++;
+      if (apiChunkIndex >= apiChunks.length) {
+        setHighlight(allWords.length - 1, 100);
+        progressBar.value = 100;
+        progressBar.style.setProperty('--progress', '100%');
+        stopPlayback();
+        return;
+      }
+      const chunk = apiChunks[apiChunkIndex];
+      const idx = apiChunkIndex;
+
+      let urlP;
+      if (apiNext && apiNext.index === idx) { urlP = Promise.resolve(apiNext.url); apiNext = null; }
+      else urlP = synthesize(chunk.text);
+
+      const ni = idx + 1;
+      if (ni < apiChunks.length && (!apiNext || apiNext.index !== ni)) {
+        synthesize(apiChunks[ni].text).then(u => { apiNext = { index: ni, url: u }; }).catch(() => {});
+      }
+
+      urlP.then(url => {
+        if (mode !== 'playing' || apiChunkIndex !== idx) return;
+        playChunkAudio(chunk, url);
+      }).catch(() => { if (mode === 'playing') startFallback(); });
+    }
+
+    function startApiPlayback() {
+      stopApi();
+      apiChunks = buildApiChunks();
+      let startIdx = 0;
+      for (let i = 0; i < apiChunks.length; i++) {
+        if (currentWordIndex <= apiChunks[i].endWord) { startIdx = i; break; }
+      }
+      apiChunkIndex = startIdx - 1;
+      mode = 'playing';
+      updatePlayButton();
+      playApiChunk();
+    }
+
     function updatePlayButton() { playIcon.innerHTML = (mode === 'playing') ? PAUSE_SVG : PLAY_SVG; }
+
     function stopPlayback() {
+      stopApi();
       if (supportsTts) { try { speechSynthesis.cancel(); } catch (e) {} }
       if (fallbackRAF) cancelAnimationFrame(fallbackRAF);
       fallbackRAF = null;
@@ -1088,6 +1151,7 @@
       updatePlayButton();
     }
     function startFallback() {
+      stopApi();
       if (supportsTts) { try { speechSynthesis.cancel(); } catch (e) {} }
       if (fallbackRAF) cancelAnimationFrame(fallbackRAF);
       mode = 'playing';
@@ -1116,7 +1180,7 @@
     function startPlayback() {
       if (!allWords.length) return;
       if (currentWordIndex >= allWords.length - 1) currentWordIndex = 0;
-
+      if (TTS_API.enabled) { startApiPlayback(); return; }
       if (!supportsTts) { startFallback(); return; }
 
       try {
@@ -1157,11 +1221,10 @@
         mode = 'playing';
         speechSynthesis.speak(utterance);
         updatePlayButton();
-        // 2.5 秒内没产生任何词边界（语音静默/失效），退回计时动画，保证进度一定会走
         setTimeout(() => {
           if (mode === 'playing' && !boundaryFired) {
             startFallback();
-            showHint('语音引擎未发声（浏览器可能不支持语音朗读），已切换为视觉播放');
+            showHint('语音引擎未发声，已切换为视觉播放');
           }
         }, 2500);
       } catch (e) {
@@ -1170,14 +1233,16 @@
     }
     function pausePlayback() {
       if (mode !== 'playing') return;
-      if (supportsTts) { try { speechSynthesis.pause(); } catch (e) {} }
+      if (TTS_API.enabled) { if (apiAudio) apiAudio.pause(); }
+      else if (supportsTts) { try { speechSynthesis.pause(); } catch (e) {} }
       else if (fallbackRAF) { cancelAnimationFrame(fallbackRAF); fallbackRAF = null; }
       mode = 'paused';
       updatePlayButton();
     }
     function resumePlayback() {
       if (mode !== 'paused') return;
-      if (supportsTts) { try { speechSynthesis.resume(); } catch (e) {} mode = 'playing'; }
+      if (TTS_API.enabled) { if (apiAudio) apiAudio.play(); mode = 'playing'; }
+      else if (supportsTts) { try { speechSynthesis.resume(); } catch (e) {} mode = 'playing'; }
       else { startPlayback(); return; }
       updatePlayButton();
     }
@@ -1192,17 +1257,16 @@
       if (wasPlaying) startPlayback();
     }
     function applySpeed() {
-      if (supportsTts && mode === 'playing') {
-        const wi = currentWordIndex;
-        stopPlayback();
-        currentWordIndex = wi;
-        startPlayback();
-      }
+      if (mode !== 'playing') return;
+      const wi = currentWordIndex;
+      stopPlayback();
+      currentWordIndex = wi;
+      startPlayback();
     }
     function tryAutoplay() {
       if (!allWords.length) return;
       startPlayback();
-      if (supportsTts) {
+      if (!TTS_API.enabled && supportsTts) {
         setTimeout(() => {
           if (mode === 'playing' && !speechSynthesis.speaking && !speechSynthesis.pending) {
             stopPlayback();
