@@ -1854,13 +1854,33 @@
     }
     updatePlayButton();
 
+    // Base64 解码（支持中文，快捷指令传正文用这个最稳）
+    function b64DecodeUtf8(b64) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+
     (function init() {
       const rawData = params.get('data');
       const rawText = params.get('text');
+      const rawB64 = params.get('b64');
       const rawUrl = params.get('url');
       if (rawData) {
         try { setEmails(normalizeInput(JSON.parse(decodeURIComponent(rawData)))); }
         catch (e) { episodeTitle.textContent = '数据解析失败'; showHint('数据解析失败，请检查传入的 JSON'); }
+      } else if (rawB64) {
+        try {
+          const parsed = parseContent(b64DecodeUtf8(decodeURIComponent(rawB64)));
+          const sender = params.get('sender');
+          const subject = params.get('subject');
+          setEmails([makeEmail(parsed, {
+            senderName: sender ? decodeURIComponent(sender) : '',
+            subject: subject ? decodeURIComponent(subject) : ''
+          })]);
+        }
+        catch (e) { showHint('文本解析失败'); }
       } else if (rawText) {
         try {
           const parsed = parseContent(decodeURIComponent(rawText));
