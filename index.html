@@ -717,6 +717,32 @@
       speechSynthesis.speak(u);
     }
 
+    // 朗读单个单词：跟随用户在声音菜单里选择的音色
+    function speakWord(word) {
+      if (!word) return;
+      const vp = VOICE_OPTIONS.find(v => v.id === voicePref) || VOICE_OPTIONS[0];
+      if (vp.src === 'api') {
+        const prevVoice = apiVoice;
+        apiVoice = vp.id;
+        synthesize(word).then(url => {
+          apiVoice = prevVoice;
+          stopApi();
+          apiAudio = new Audio(url);
+          apiAudio.play().catch(() => {});
+        }).catch(() => {
+          apiVoice = prevVoice;
+          speakViaTts(word, 'en-US');
+        });
+      } else {
+        if (supportsTts) { try { speechSynthesis.cancel(); } catch (e) {} }
+        const u = new SpeechSynthesisUtterance(word);
+        u.lang = 'en-US';
+        const sv = findSiriVoice(vp.id);
+        if (sv) u.voice = sv;
+        speechSynthesis.speak(u);
+      }
+    }
+
     // ==================== 声音选择 ====================
     const VOICE_OPTIONS = [
       { id: 'nova',     label: '女声 · AI (nova)',     src: 'api' },
@@ -1440,7 +1466,12 @@
       state.currentEmailIndex = index;
       buildPlayer(state.emails[index]);
       renderEmailList();
-      if (opts.autoplay) tryAutoplay();
+      if (opts.autoplay) {
+        // 等渲染完全稳定后再开始，避免解析大正文时进度条乱跳
+        setTimeout(() => {
+          requestAnimationFrame(() => { tryAutoplay(); });
+        }, 350);
+      }
     }
     function setEmails(list, opts = {}) {
       state.emails = Array.isArray(list) ? list : [];
@@ -1522,7 +1553,16 @@
           if (!w) { dictCn.innerHTML = ''; return; }
           const phone = w.usphone || w.ukphone;
           if (phone && !dictPhonetic.textContent) dictPhonetic.textContent = '美 /' + phone + '/';
-          const lines = (w.trs || []).map(tr => (tr && tr[0]) || '').filter(Boolean);
+          // 有道结构：trs[].tr[].l.i[] = ["n. 释义", ...]
+          const raw = [];
+          (w.trs || []).forEach(item => {
+            (item && item.tr || []).forEach(t => {
+              if (t && t.l && t.l.i) {
+                t.l.i.forEach(s => { if (s) raw.push(String(s)); });
+              }
+            });
+          });
+          const lines = raw.map(s => s.replace(/^[a-z]+\.\s*/i, '').trim()).filter(Boolean);
           currentCard.zh = lines.join('；');
           dictCn.innerHTML = '';
           if (!lines.length) return;
@@ -1537,7 +1577,7 @@
             num.className = 'num';
             num.textContent = (i + 1) + '.';
             def.appendChild(num);
-            def.appendChild(document.createTextNode(t.replace(/^[a-z]+\.\s*/i, '')));
+            def.appendChild(document.createTextNode(t));
             dictCn.appendChild(def);
           });
         })
@@ -1584,12 +1624,6 @@
           def.appendChild(num);
           def.appendChild(document.createTextNode(d.definition || ''));
           wrap.appendChild(def);
-          if (d.example) {
-            const ex = document.createElement('div');
-            ex.className = 'dict-example';
-            ex.textContent = '例句：' + d.example;
-            wrap.appendChild(ex);
-          }
         });
         dictMeanings.appendChild(wrap);
       });
@@ -1735,7 +1769,7 @@
       resumeAfterPress = wasPlaying;
       if (wasPlaying || mode === 'paused') stopPlayback();
       markSelected(t.idx, true);
-      speakViaTts(t.word.replace(/[.,!?;:'"()\[\]…]+$/, ''), 'en-US');
+      speakWord(t.word.replace(/[.,!?;:'"()\[\]…]+$/, ''));
       lookupWord(t.word, t.idx, t.el);
     }
 
@@ -1850,12 +1884,7 @@
     dictClose.addEventListener('click', closeDict);
     dictSpeakBtn.addEventListener('click', () => {
       if (!currentCard) return;
-      if (currentCard.audio) {
-        const a = new Audio(currentCard.audio);
-        a.play().catch(() => speakViaTts(currentCard.word, 'en-US'));
-      } else {
-        speakViaTts(currentCard.word, 'en-US');
-      }
+      speakWord(currentCard.word);
     });
     let pendingSave = false;
     function openObsSettings() {
@@ -1881,7 +1910,15 @@
           const r = await fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(word));
           const d = await r.json();
           const w = d && d.ec && d.ec.word && d.ec.word[0];
-          if (w) zh = (w.trs || []).map(t => (t && t[0]) || '').filter(Boolean).join('；').replace(/^[a-z]+\.\s*/i, '');
+          if (w) {
+            const raw = [];
+            (w.trs || []).forEach(item => {
+              (item && item.tr || []).forEach(t => {
+                if (t && t.l && t.l.i) t.l.i.forEach(s => { if (s) raw.push(String(s)); });
+              });
+            });
+            zh = raw.map(s => s.replace(/^[a-z]+\.\s*/i, '').trim()).filter(Boolean).join('；');
+          }
         } catch (e) {}
       }
       const template = cfg.template || OBSIDIAN_TEMPLATE;
