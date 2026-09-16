@@ -206,22 +206,23 @@
     .t-btn.timer.active { color: var(--accent-ink); }
     .timer-label { font-size: 10px; color: var(--sec); font-weight: 500; }
 
-    /* ===== 邮件列表 ===== */
+    /* ===== 邮件列表：右侧边栏（从右侧滑入，不再从下方弹出） ===== */
     .email-list {
       position: fixed;
-      left: 0; right: 0; bottom: 0;
-      max-height: 58vh;
+      top: 0; right: 0; bottom: 0;
+      width: min(330px, 84vw);
       background: var(--bg);
-      border-top: 0.5px solid var(--divider);
-      border-top-left-radius: 18px; border-top-right-radius: 18px;
-      transform: translateY(110%);
-      transition: transform 0.28s ease;
+      border-left: 0.5px solid var(--divider);
+      transform: translateX(101%);
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
       z-index: 40;
       display: flex; flex-direction: column;
       overflow: hidden;
+      padding-top: env(safe-area-inset-top);
       padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.13);
     }
-    .email-list.open { transform: translateY(0); }
+    .email-list.open { transform: translateX(0); }
     .list-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 6px; flex-shrink: 0; }
     .list-header-title { font-size: 15px; font-weight: 700; }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px; flex-shrink: 0; }
@@ -389,19 +390,19 @@
     .obs-hint { font-size: 11px; color: var(--sec); margin: 4px 0 14px; line-height: 1.6; }
     .obs-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-    /* ===== 横屏：列表变右侧面板，可收缩 ===== */
+    /* ===== 宽屏：右侧边栏常驻，可收缩 ===== */
     @media (min-width: 760px) {
       .app { flex-direction: row; }
       .container { flex: 1; min-width: 0; }
       .email-list {
         position: static; transform: none;
-        width: 340px; height: 100vh; max-height: none;
-        border-radius: 0; border-top: none;
+        width: 340px; height: 100vh;
         border-left: 0.5px solid var(--divider);
-        padding-bottom: 0;
-        transition: width 0.25s ease;
+        padding-top: 0; padding-bottom: 0;
+        box-shadow: none;
+        transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
       }
-      .email-list.collapsed { width: 0; border-left: none; }
+      .email-list.collapsed { width: 0; border-left: none; overflow: hidden; }
       .list-backdrop { display: none; }
     }
   </style>
@@ -451,11 +452,11 @@
         <div class="transport">
           <button class="t-btn speed" id="speedBtn" title="倍速"><span id="speedDisplay">1.0x</span></button>
           <button class="t-btn skip" id="rewindBtn" title="后退10秒">
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4a8.6 8.6 0 1 0 8.6 8.6"/><path d="M12 8.2L9 5.2l3-3"/><text x="12" y="14" text-anchor="middle" font-size="6.2" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 A8 8 0 1 0 20 13"/><path d="M12 2.4 L8.6 5 L12 7.6"/><text x="12" y="16.8" text-anchor="middle" font-size="6.5" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn play" id="playBtn" title="播放"><span id="playIcon"></span></button>
           <button class="t-btn skip" id="forwardBtn" title="前进10秒">
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4a8.6 8.6 0 1 1 -8.6 8.6"/><path d="M12 8.2l3-3-3-3"/><text x="12" y="14" text-anchor="middle" font-size="6.2" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 A8 8 0 1 1 4 13"/><path d="M12 2.4 L15.4 5 L12 7.6"/><text x="12" y="16.8" text-anchor="middle" font-size="6.5" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn timer" id="timerBtn" title="定时">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>
@@ -717,18 +718,20 @@
       speechSynthesis.speak(u);
     }
 
-    // 朗读单个单词：跟随用户在声音菜单里选择的音色
+    // 朗读单个单词：用独立音频元素，绝不干扰正文播放
+    let wordAudio = null;
     function speakWord(word) {
       if (!word) return;
+      if (wordAudio) { try { wordAudio.pause(); } catch (e) {} wordAudio = null; }
       const vp = VOICE_OPTIONS.find(v => v.id === voicePref) || VOICE_OPTIONS[0];
       if (vp.src === 'api') {
         const prevVoice = apiVoice;
         apiVoice = vp.id;
         synthesize(word).then(url => {
           apiVoice = prevVoice;
-          stopApi();
-          apiAudio = new Audio(url);
-          apiAudio.play().catch(() => {});
+          if (wordAudio) { try { wordAudio.pause(); } catch (e) {} }
+          wordAudio = new Audio(url);
+          wordAudio.play().catch(() => {});
         }).catch(() => {
           apiVoice = prevVoice;
           speakViaTts(word, 'en-US');
@@ -1198,20 +1201,29 @@
     }
 
     function playChunkAudio(chunk, url) {
-      apiAudio = new Audio(url);
+      const audio = new Audio(url);
+      apiAudio = audio;
       const wordCount = chunk.endWord - chunk.startWord + 1;
-      apiAudio.ontimeupdate = () => {
-        if (!apiAudio.duration || mode !== 'playing') return;
-        const ratio = Math.min(1, apiAudio.currentTime / apiAudio.duration);
+      audio.ontimeupdate = () => {
+        // 用局部 audio 引用，避免切到下一段时旧回调把字幕拉回去
+        if (apiAudio !== audio || mode !== 'playing') return;
+        if (!audio.duration || !isFinite(audio.duration)) return;
+        const ratio = Math.min(1, audio.currentTime / audio.duration);
         const wi = chunk.startWord + Math.floor(ratio * wordCount);
         const progress = (wi / allWords.length) * 100;
         setHighlight(wi, progress);
         progressBar.value = progress;
         progressBar.style.setProperty('--progress', progress + '%');
       };
-      apiAudio.onended = () => { if (mode === 'playing') playApiChunk(); };
-      apiAudio.onerror = () => { if (mode === 'playing') playApiChunk(); };
-      apiAudio.play().catch(() => { if (mode === 'playing') startFallback(); });
+      audio.onended = () => { if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
+      audio.onerror = () => { if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
+      audio.play().catch(() => {
+        // iOS 拦截自动播放：不要启动视觉计时器（否则字幕会跑到声音前面），只提示
+        if (mode === 'playing') {
+          stopPlayback();
+          showHint('请点击播放按钮开始朗读');
+        }
+      });
     }
 
     function playApiChunk() {
@@ -1239,7 +1251,9 @@
       urlP.then(url => {
         if (mode !== 'playing' || apiChunkIndex !== idx) return;
         playChunkAudio(chunk, url);
-      }).catch(() => { if (mode === 'playing') startFallback(); });
+      }).catch(() => {
+        if (mode === 'playing') { stopPlayback(); showHint('语音合成失败，请重试'); }
+      });
     }
 
     function startApiPlayback() {
@@ -1353,17 +1367,34 @@
     }
     function pausePlayback() {
       if (mode !== 'playing') return;
-      if (usingApi) { if (apiAudio) apiAudio.pause(); }
-      else if (supportsTts) { try { speechSynthesis.pause(); } catch (e) {} }
-      else if (fallbackRAF) { cancelAnimationFrame(fallbackRAF); fallbackRAF = null; }
       mode = 'paused';
+      if (usingApi) {
+        if (apiAudio) { try { apiAudio.pause(); } catch (e) {} }
+      } else if (supportsTts) {
+        try { speechSynthesis.pause(); } catch (e) {}
+      } else if (fallbackRAF) {
+        cancelAnimationFrame(fallbackRAF); fallbackRAF = null;
+      }
       updatePlayButton();
     }
     function resumePlayback() {
       if (mode !== 'paused') return;
-      if (usingApi) { if (apiAudio) apiAudio.play(); mode = 'playing'; }
-      else if (supportsTts) { try { speechSynthesis.resume(); } catch (e) {} mode = 'playing'; }
-      else { startPlayback(); return; }
+      mode = 'playing';
+      if (usingApi) {
+        if (apiAudio && apiAudio.src && !apiAudio.ended) {
+          const p = apiAudio.play();
+          if (p && p.catch) p.catch(() => {});
+        } else {
+          // 音频还没就绪（还在合成中）：把当前这一段重新走一遍
+          apiChunkIndex--;
+          playApiChunk();
+        }
+      } else if (supportsTts) {
+        try { speechSynthesis.resume(); } catch (e) {}
+      } else {
+        startPlayback();
+        return;
+      }
       updatePlayButton();
     }
     function seekBy(deltaSeconds) {
@@ -1535,6 +1566,20 @@
     function openDict(anchorEl) { positionDict(anchorEl); dictPanel.classList.add('open'); }
     function closeDict() { dictPanel.classList.remove('open'); }
 
+    // 有道释义通用提取：trs[].tr[].l.i[] = ["释义", ...]
+    function extractYoudaoTrs(trs) {
+      const out = [];
+      (trs || []).forEach(item => {
+        (item && item.tr || []).forEach(t => {
+          if (t && t.l && t.l.i) {
+            const v = Array.isArray(t.l.i) ? t.l.i : [t.l.i];
+            v.forEach(s => { if (s) out.push(String(s)); });
+          }
+        });
+      });
+      return out;
+    }
+
     function lookupWord(word, idx, anchorEl) {
       const clean = word.replace(/[.,!?;:'"()\[\]…]+$/, '').trim();
       dictWord.textContent = clean;
@@ -1544,89 +1589,77 @@
       openDict(anchorEl);
       currentCard = { word: clean, phonetic: '', meanings: [], audio: '', zh: '' };
 
-      // 1) 中文释义（有道，通常最快）
+      // 一次请求拿全：中文释义(ec) + 英文释义(ee) + 音标
       fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(clean))
         .then(r => r.json())
         .then(d => {
-          const ec = d && d.ec;
-          const w = ec && ec.word && ec.word[0];
-          if (!w) { dictCn.innerHTML = ''; return; }
-          const phone = w.usphone || w.ukphone;
-          if (phone && !dictPhonetic.textContent) dictPhonetic.textContent = '美 /' + phone + '/';
-          // 有道结构：trs[].tr[].l.i[] = ["n. 释义", ...]
-          const raw = [];
-          (w.trs || []).forEach(item => {
-            (item && item.tr || []).forEach(t => {
-              if (t && t.l && t.l.i) {
-                t.l.i.forEach(s => { if (s) raw.push(String(s)); });
-              }
-            });
-          });
-          const lines = raw.map(s => s.replace(/^[a-z]+\.\s*/i, '').trim()).filter(Boolean);
-          currentCard.zh = lines.join('；');
+          // 音标
+          const ecw = d && d.ec && d.ec.word && d.ec.word[0];
+          const simplew = d && d.simple && d.simple.word && d.simple.word[0];
+          const phone = (ecw && (ecw.usphone || ecw.ukphone)) || (simplew && (simplew.usphone || simplew.ukphone)) || '';
+          if (phone) {
+            dictPhonetic.textContent = '美 /' + phone + '/';
+            currentCard.phonetic = phone;
+          }
+
+          // 中文释义
           dictCn.innerHTML = '';
-          if (!lines.length) return;
-          const title = document.createElement('div');
-          title.className = 'dict-pos';
-          title.textContent = '中文释义';
-          dictCn.appendChild(title);
-          lines.slice(0, 8).forEach((t, i) => {
-            const def = document.createElement('div');
-            def.className = 'dict-def';
-            const num = document.createElement('span');
-            num.className = 'num';
-            num.textContent = (i + 1) + '.';
-            def.appendChild(num);
-            def.appendChild(document.createTextNode(t));
-            dictCn.appendChild(def);
-          });
-        })
-        .catch(() => { dictCn.innerHTML = ''; });
+          const cnLines = ecw ? extractYoudaoTrs(ecw.trs).map(s => s.replace(/^[a-z]+\.\s*/i, '').trim()).filter(Boolean) : [];
+          if (cnLines.length) {
+            currentCard.zh = cnLines.join('；');
+            const t1 = document.createElement('div');
+            t1.className = 'dict-pos';
+            t1.textContent = '中文释义';
+            dictCn.appendChild(t1);
+            cnLines.slice(0, 8).forEach((t, i) => {
+              const def = document.createElement('div');
+              def.className = 'dict-def';
+              const num = document.createElement('span');
+              num.className = 'num';
+              num.textContent = (i + 1) + '.';
+              def.appendChild(num);
+              def.appendChild(document.createTextNode(t));
+              dictCn.appendChild(def);
+            });
+          }
 
-      // 2) 英文释义（dictionaryapi，经 Worker 代理）
-      fetch(WORKER + '/v1/dict?word=' + encodeURIComponent(clean))
-        .then(res => { if (!res.ok) throw new Error('nf'); return res.json(); })
-        .then(data => {
-          const entry = data[0] || {};
-          const phonetics = entry.phonetics || [];
-          const audio = (phonetics.map(p => p.audio).find(Boolean)) || '';
-          const phoneticText = entry.phonetic || ((phonetics.find(p => p.text) || {}).text || '');
-          if (phoneticText && !dictPhonetic.textContent) dictPhonetic.textContent = phoneticText;
-          currentCard.phonetic = currentCard.phonetic || phoneticText;
-          currentCard.meanings = entry.meanings || [];
-          currentCard.audio = audio;
-          renderDict(currentCard.meanings);
+          // 英文释义（ee 字段）
+          dictMeanings.innerHTML = '';
+          const eew = d && d.ee && d.ee.word;
+          const eeTrs = (eew && eew.trs) || [];
+          if (eeTrs.length) {
+            const t2 = document.createElement('div');
+            t2.className = 'dict-pos';
+            t2.textContent = '英文释义';
+            t2.style.marginTop = '10px';
+            dictMeanings.appendChild(t2);
+            eeTrs.slice(0, 4).forEach(grp => {
+              const wrap = document.createElement('div');
+              wrap.className = 'dict-meaning';
+              if (grp.pos) {
+                const pos = document.createElement('div');
+                pos.className = 'dict-pos';
+                pos.textContent = grp.pos;
+                wrap.appendChild(pos);
+              }
+              extractYoudaoTrs([grp]).slice(0, 3).forEach((t, i) => {
+                const def = document.createElement('div');
+                def.className = 'dict-def';
+                const num = document.createElement('span');
+                num.className = 'num';
+                num.textContent = (i + 1) + '.';
+                def.appendChild(num);
+                def.appendChild(document.createTextNode(t));
+                wrap.appendChild(def);
+              });
+              dictMeanings.appendChild(wrap);
+            });
+          }
+          if (!dictMeanings.innerHTML) dictMeanings.innerHTML = '';
         })
-        .catch(() => { dictMeanings.innerHTML = ''; });
-    }
-
-    function renderDict(meanings) {
-      dictMeanings.innerHTML = '';
-      if (!meanings.length) return;
-      const title = document.createElement('div');
-      title.className = 'dict-pos';
-      title.textContent = '英文释义';
-      title.style.marginTop = '10px';
-      dictMeanings.appendChild(title);
-      meanings.forEach(m => {
-        const wrap = document.createElement('div');
-        wrap.className = 'dict-meaning';
-        const pos = document.createElement('div');
-        pos.className = 'dict-pos';
-        pos.textContent = m.partOfSpeech || '';
-        wrap.appendChild(pos);
-        (m.definitions || []).slice(0, 3).forEach((d, di) => {
-          const def = document.createElement('div');
-          def.className = 'dict-def';
-          const num = document.createElement('span');
-          num.className = 'num';
-          num.textContent = (di + 1) + '.';
-          def.appendChild(num);
-          def.appendChild(document.createTextNode(d.definition || ''));
-          wrap.appendChild(def);
+        .catch(() => {
+          dictCn.innerHTML = '<div style="color:var(--sec)">查询失败</div>';
         });
-        dictMeanings.appendChild(wrap);
-      });
     }
 
     // 备用词典源（Datamuse，无音标/发音，但稳定）
