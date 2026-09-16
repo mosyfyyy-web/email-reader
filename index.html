@@ -761,9 +761,40 @@
         .trim();
     }
 
+    // RTF → 纯文本（苹果邮件正文常是 RTF 格式）
+    function rtfToText(rtf) {
+      let s = String(rtf || '');
+      // 去掉字体表/颜色表/样式表等非正文组
+      s = s.replace(/\{\\(fonttbl|colortbl|stylesheet|info|pict|header|footer|footnote)[\s\S]*?\}/g, '');
+      // 去掉可忽略组 {\*\...}
+      s = s.replace(/\{\\\*[\s\S]*?\}/g, '');
+      // Unicode 转义 \uNNNN?
+      s = s.replace(/\\u(-?\d+)\s?\??/g, (m, code) => {
+        let n = parseInt(code, 10);
+        if (n < 0) n += 65536;
+        return String.fromCharCode(n);
+      });
+      // 十六进制转义 \'xx
+      s = s.replace(/\\'([0-9a-fA-F]{2})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
+      // 段落/换行
+      s = s.replace(/\\(par|line|pard|sect)\b/g, '\n');
+      // 制表
+      s = s.replace(/\\tab\b/g, '\t');
+      // 其余控制字
+      s = s.replace(/\\[a-zA-Z]+-?\d*\s?/g, '');
+      // 控制符号
+      s = s.replace(/\\[^a-zA-Z]/g, '');
+      // 花括号
+      s = s.replace(/[{}]/g, '');
+      s = s.replace(/[ \t]{2,}/g, ' ');
+      s = s.replace(/\n{3,}/g, '\n\n');
+      return s.trim();
+    }
+
     function parseContent(text) {
       text = (text || '').trim();
       if (!text) return { subject: '', imageUrl: '', sections: [] };
+      if (/^\{\\rtf/i.test(text)) text = rtfToText(text);
       let result;
       if (looksLikeHtml(text)) result = parseHtml(text);
       else if (looksLikeMarkdown(text)) result = parseMarkdown(text);
