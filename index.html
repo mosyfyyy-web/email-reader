@@ -749,12 +749,29 @@
     // ==================== 内容解析 ====================
     function looksLikeHtml(text) { return /<\s*(html|head|body|div|p|h[1-6]|span|a|img|table|article|section|li|ul|ol|br)\b/i.test(text); }
     function looksLikeMarkdown(text) { return /^#{1,6}\s+\S/m.test(text); }
+    // 清洗正文：去掉 base64 内嵌图片、超长乱码串等
+    function stripJunkText(t) {
+      return (t || '')
+        .replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/gi, ' ')  // data:image/...;base64,xxx
+        .replace(/!\[[^\]]*\]\(data:[^)]*\)/gi, ' ')                            // markdown 内嵌图片
+        .replace(/cid:[^\s)"']+/gi, ' ')                                        // 邮件 cid 引用
+        .replace(/[A-Za-z0-9+/]{80,}={0,2}/g, ' ')                              // 超长 base64 串
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+
     function parseContent(text) {
       text = (text || '').trim();
       if (!text) return { subject: '', imageUrl: '', sections: [] };
-      if (looksLikeHtml(text)) return parseHtml(text);
-      if (looksLikeMarkdown(text)) return parseMarkdown(text);
-      return parsePlain(text);
+      let result;
+      if (looksLikeHtml(text)) result = parseHtml(text);
+      else if (looksLikeMarkdown(text)) result = parseMarkdown(text);
+      else result = parsePlain(text);
+      result.subject = stripJunkText(result.subject);
+      (result.sections || []).forEach(s => { s.content = stripJunkText(s.content); });
+      result.sections = (result.sections || []).filter(s => s.content || s.title);
+      return result;
     }
     function parsePlain(text) {
       const lines = text.split(/\r?\n/).map(s => s.trim());
