@@ -768,37 +768,49 @@
         .replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/gi, ' ')  // data:image/...;base64,xxx
         .replace(/!\[[^\]]*\]\(data:[^)]*\)/gi, ' ')                            // markdown 内嵌图片
         .replace(/cid:[^\s)"']+/gi, ' ')                                        // 邮件 cid 引用
-        .replace(/[A-Za-z0-9+/]{80,}={0,2}/g, ' ')                              // 超长 base64 串
+        .replace(/[A-Za-z0-9+/]{200,}={0,2}/g, ' ')                             // 超长 base64 串
         .replace(/[ \t]{2,}/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     }
 
-    // RTF → 纯文本（苹果邮件正文常是 RTF 格式）
-    function rtfToText(rtf) {
-      let s = String(rtf || '');
-      // 去掉字体表/颜色表/样式表等非正文组
-      s = s.replace(/\{\\(fonttbl|colortbl|stylesheet|info|pict|header|footer|footnote)[\s\S]*?\}/g, '');
-      // 去掉可忽略组 {\*\...}
+    // RTF → 纯文本（苹果邮件正文常是「RTF 包裹 HTML」）
+    function rtfToText(raw) {
+      const PL1 = '', PL2 = '', PL3 = '';
+      let s = String(raw || '');
+      // 1. 先保护转义字符，避免与 RTF 结构括号混淆
+      s = s.split('\\\\').join(PL1);
+      s = s.split('\\{').join(PL2);
+      s = s.split('\\}').join(PL3);
+      // 2. 去掉字体表/颜色表等非正文组
+      s = s.replace(/\{\\(fonttbl|colortbl|stylesheet|info|pict|header|footer|footnote|listtable|rsidtbl|filetbl|revtbl)[\s\S]*?\}/g, '');
+      // 3. 去掉可忽略组 {\*\...}
       s = s.replace(/\{\\\*[\s\S]*?\}/g, '');
-      // Unicode 转义 \uNNNN?
+      // 4. Unicode 转义 \uNNNN?
       s = s.replace(/\\u(-?\d+)\s?\??/g, (m, code) => {
         let n = parseInt(code, 10);
         if (n < 0) n += 65536;
         return String.fromCharCode(n);
       });
-      // 十六进制转义 \'xx
-      s = s.replace(/\\'([0-9a-fA-F]{2})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
-      // 段落/换行
+      // 5. cp1252 十六进制转义 \'xx
+      const CP = { 0x82:'‚',0x83:'ƒ',0x84:'„',0x85:'…',0x86:'†',0x87:'‡',
+        0x88:'ˆ',0x89:'‰',0x8A:'Š',0x8B:'‹',0x8C:'Œ',0x8E:'Ž',
+        0x91:'‘',0x92:'’',0x93:'“',0x94:'”',0x95:'•',0x96:'–',0x97:'—',
+        0x98:'˜',0x99:'™',0x9A:'š',0x9B:'›',0x9C:'œ',0x9E:'ž',0x9F:'Ÿ',0xA0:' ' };
+      s = s.replace(/\\'([0-9a-fA-F]{2})/g, (m, hex) => {
+        const b = parseInt(hex, 16);
+        return b < 0x80 ? String.fromCharCode(b) : (CP[b] || ' ');
+      });
+      // 6. 段落/换行
       s = s.replace(/\\(par|line|pard|sect)\b/g, '\n');
-      // 制表
       s = s.replace(/\\tab\b/g, '\t');
-      // 其余控制字
+      // 7. 其余控制字
       s = s.replace(/\\[a-zA-Z]+-?\d*\s?/g, '');
-      // 控制符号
-      s = s.replace(/\\[^a-zA-Z]/g, '');
-      // 花括号
+      // 8. 去掉 RTF 结构括号
       s = s.replace(/[{}]/g, '');
+      // 9. 还原被保护的转义字符
+      s = s.split(PL1).join('\\').split(PL2).join('{').split(PL3).join('}');
+      // 10. 清理空白
       s = s.replace(/[ \t]{2,}/g, ' ');
       s = s.replace(/\n{3,}/g, '\n\n');
       return s.trim();
