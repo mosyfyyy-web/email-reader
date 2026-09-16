@@ -82,7 +82,7 @@
       overflow: hidden;
       cursor: pointer;
       box-shadow: 0 6px 18px rgba(0, 47, 167, 0.25);
-      transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease, box-shadow 0.3s ease;
+      will-change: transform;
     }
     .art img { width: 100%; height: 100%; object-fit: cover; display: none; }
     .meta-text { flex: 1; min-width: 0; }
@@ -90,7 +90,10 @@
     .subtitle { font-size: 13px; color: var(--sec); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* 封面放大视图（点克莱因蓝方块） */
+    .content-area, .sections { transition: opacity 0.22s ease; }
     .app.focus .content-area,
+    .app.focus .sections { opacity: 0; pointer-events: none; }
+    .app.focus .content-area { flex: 0; overflow: hidden; padding: 0; }
     .app.focus .sections { display: none; }
     .app.focus .meta { flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; }
     .app.focus .art { width: min(78vw, 340px); height: min(78vw, 340px); border-radius: 24px; }
@@ -663,9 +666,19 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
     }
+    // 把外部图片走 Worker 代理加载（绕开防盗链/网络限制），已是代理地址的跳过
+    function proxifyImage(url) {
+      if (!url) return '';
+      if (url.indexOf(WORKER) === 0) return url;
+      if (!/^https?:\/\//i.test(url)) return '';   // 相对路径/cid 无法代理
+      return WORKER + '/v1/fetch?url=' + encodeURIComponent(url);
+    }
+
     function setEpisodeImage(src) {
       if (!src) return;
-      episodeImg.src = src;
+      const p = proxifyImage(src);
+      if (!p) return;
+      episodeImg.src = p;
       episodeImg.style.display = 'block';
       imgPlaceholder.style.display = 'none';
     }
@@ -1764,8 +1777,29 @@
     });
 
     listToggleBtn.addEventListener('click', toggleList);
+    // 封面缩放：FLIP 动画，从左上角平滑移动到中间并放大（而非消失后重现）
     artBtn.addEventListener('click', () => {
-      document.querySelector('.app').classList.toggle('focus');
+      const app = document.querySelector('.app');
+      const first = artBtn.getBoundingClientRect();
+
+      app.classList.toggle('focus');
+
+      const last = artBtn.getBoundingClientRect();
+      const dx = (first.left + first.width / 2) - (last.left + last.width / 2);
+      const dy = (first.top + first.height / 2) - (last.top + last.height / 2);
+      const sx = last.width ? first.width / last.width : 1;
+      const sy = last.height ? first.height / last.height : 1;
+
+      artBtn.style.transition = 'none';
+      artBtn.style.transformOrigin = 'center center';
+      artBtn.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ',' + sy + ')';
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          artBtn.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+          artBtn.style.transform = '';
+        });
+      });
     });
     listCloseBtn.addEventListener('click', closeList);
     listBackdrop.addEventListener('click', closeList);
