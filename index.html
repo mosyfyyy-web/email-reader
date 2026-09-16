@@ -47,11 +47,10 @@
     .topbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       padding: max(14px, env(safe-area-inset-top)) 20px 10px;
       flex-shrink: 0;
     }
-    .topbar-title { font-size: 16px; font-weight: 700; }
     .topbar-actions { display: flex; gap: 18px; align-items: center; }
 
     .icon-btn {
@@ -81,12 +80,22 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 30px; font-weight: 600; color: #fff;
       overflow: hidden;
+      cursor: pointer;
       box-shadow: 0 6px 18px rgba(0, 47, 167, 0.25);
+      transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease, box-shadow 0.3s ease;
     }
     .art img { width: 100%; height: 100%; object-fit: cover; display: none; }
     .meta-text { flex: 1; min-width: 0; }
     .title { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .subtitle { font-size: 13px; color: var(--sec); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* 封面放大视图（点克莱因蓝方块） */
+    .app.focus .content-area,
+    .app.focus .sections { display: none; }
+    .app.focus .meta { flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; }
+    .app.focus .art { width: min(78vw, 340px); height: min(78vw, 340px); border-radius: 24px; }
+    .app.focus .meta-text { flex: none; text-align: center; max-width: 90%; }
+    .app.focus .title { white-space: normal; font-size: 20px; }
 
     /* ===== 段落标签（换行，不横向滚动） ===== */
     .sections {
@@ -398,7 +407,6 @@
   <div class="app">
     <div class="container">
       <header class="topbar">
-        <div class="topbar-title">邮件朗读</div>
         <div class="topbar-actions">
           <button class="icon-btn" id="importBtn" title="导入">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
@@ -413,13 +421,13 @@
       </header>
 
       <div class="meta">
-        <div class="art">
+        <div class="art" id="artBtn">
           <img id="episodeImg" alt="">
-          <span id="imgPlaceholder">邮</span>
+          <span id="imgPlaceholder"></span>
         </div>
         <div class="meta-text">
-          <div class="title" id="episodeTitle">正在加载...</div>
-          <div class="subtitle" id="episodeSubtitle">邮件朗读</div>
+          <div class="title" id="episodeTitle"></div>
+          <div class="subtitle" id="episodeSubtitle"></div>
         </div>
       </div>
 
@@ -440,11 +448,11 @@
         <div class="transport">
           <button class="t-btn speed" id="speedBtn" title="倍速"><span id="speedDisplay">1.0x</span></button>
           <button class="t-btn skip" id="rewindBtn" title="后退10秒">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.4a7.6 7.6 0 0 0 -6.7 4"/><path d="M5.3 8.4V3.7h4.7"/><text x="12.5" y="14" text-anchor="middle" font-size="6" fill="currentColor" stroke="none" font-weight="600" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4a8.6 8.6 0 1 0 8.6 8.6"/><path d="M12 8.2L9 5.2l3-3"/><text x="12" y="14" text-anchor="middle" font-size="6.2" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn play" id="playBtn" title="播放"><span id="playIcon"></span></button>
           <button class="t-btn skip" id="forwardBtn" title="前进10秒">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.4a7.6 7.6 0 0 1 6.7 4"/><path d="M18.7 8.4V3.7h-4.7"/><text x="11.5" y="14" text-anchor="middle" font-size="6" fill="currentColor" stroke="none" font-weight="600" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4a8.6 8.6 0 1 1 -8.6 8.6"/><path d="M12 8.2l3-3-3-3"/><text x="12" y="14" text-anchor="middle" font-size="6.2" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn timer" id="timerBtn" title="定时">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>
@@ -470,17 +478,16 @@
 
   <div class="import-panel" id="importPanel">
     <div class="import-box">
-      <h3>导入内容</h3>
-      <textarea id="importText" placeholder="在此粘贴邮件正文 / Markdown / HTML，自动识别大中小标题、正文与图片"></textarea>
+      <h3>导入</h3>
+      <textarea id="importText" placeholder="粘贴正文 / Markdown / HTML"></textarea>
+      <div class="import-file">
+        <input type="file" id="importFile" accept=".txt,.md,.markdown,.html,.htm,.json">
+        <span>选择文件</span>
+      </div>
       <div class="import-row">
         <input type="text" id="importUrl" placeholder="或输入链接地址">
         <button class="btn btn-primary" id="importUrlBtn">读取链接</button>
       </div>
-      <div class="import-file">
-        <input type="file" id="importFile" accept=".txt,.md,.markdown,.html,.htm,.json">
-        <span>或选择本地文件（.txt / .md / .html / .json）</span>
-      </div>
-      <div class="import-hint">提示：链接若被跨域拦截，可先在快捷指令中用「获取 URL 内容」拿到正文再粘贴到这里；Markdown 用 # / ## / ### 表示大中小标题。</div>
       <div class="import-actions">
         <button class="btn btn-ghost" id="importClose">取消</button>
         <button class="btn btn-primary" id="importLoad">加载</button>
@@ -554,6 +561,7 @@
     const episodeTitle = document.getElementById('episodeTitle');
     const episodeSubtitle = document.getElementById('episodeSubtitle');
     const episodeImg = document.getElementById('episodeImg');
+    const artBtn = document.getElementById('artBtn');
     const imgPlaceholder = document.getElementById('imgPlaceholder');
     const sectionsContainer = document.getElementById('sectionsContainer');
     const emailList = document.getElementById('emailList');
@@ -591,8 +599,8 @@
     const obsCancel = document.getElementById('obsCancel');
     const obsSave = document.getElementById('obsSave');
 
-    const PLAY_SVG = '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>';
-    const PAUSE_SVG = '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>';
+    const PLAY_SVG = '<svg viewBox="0 0 24 24" width="40" height="40"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>';
+    const PAUSE_SVG = '<svg viewBox="0 0 24 24" width="40" height="40"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>';
 
     // ==================== 状态 ====================
     const state = { emails: [], currentEmailIndex: 0, senderFilter: null, senders: [] };
@@ -1702,6 +1710,9 @@
     });
 
     listToggleBtn.addEventListener('click', toggleList);
+    artBtn.addEventListener('click', () => {
+      document.querySelector('.app').classList.toggle('focus');
+    });
     listCloseBtn.addEventListener('click', closeList);
     listBackdrop.addEventListener('click', closeList);
 
