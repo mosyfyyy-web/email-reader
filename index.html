@@ -1097,8 +1097,9 @@
     }
 
     // ==================== 播放控制 ====================
+    const WORKER = 'https://shiny-lake-6597.mosyfyyy.workers.dev';
     const TTS_API = {
-      url: 'https://shiny-lake-6597.mosyfyyy.workers.dev/v1/audio/speech',
+      url: WORKER + '/v1/audio/speech',
       model: 'tts-1',
       voice: 'alloy',
       voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
@@ -1429,13 +1430,15 @@
       }
     }
     async function loadFromUrl(url) {
+      // 经 Worker 代理抓取，绕开跨域和网络限制
       try {
-        const res = await fetch(url);
+        const res = await fetch(WORKER + '/v1/fetch?url=' + encodeURIComponent(url));
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const text = await res.text();
+        if (!text || text.length < 50) throw new Error('empty');
         setEmails([makeEmail(parseContent(text))]);
       } catch (e) {
-        showHint('无法读取该链接（可能被跨域拦截）。建议在快捷指令中用「获取 URL 内容」拿到正文后粘贴进来');
+        showHint('无法读取该链接');
       }
     }
 
@@ -1477,37 +1480,69 @@
     function closeDict() { dictPanel.classList.remove('open'); }
 
     function lookupWord(word, idx, anchorEl) {
-      // 去掉词尾标点，避免查不到
       const clean = word.replace(/[.,!?;:'"()\[\]…]+$/, '').trim();
       dictWord.textContent = clean;
       dictPhonetic.textContent = '';
-      dictCn.textContent = '';
-      dictMeanings.innerHTML = '<div style="color:var(--sec)">查询中…</div>';
+      dictCn.innerHTML = '<div style="color:var(--sec)">查询中…</div>';
+      dictMeanings.innerHTML = '';
       openDict(anchorEl);
+      currentCard = { word: clean, phonetic: '', meanings: [], audio: '', zh: '' };
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
+      // 1) 中文释义（有道，通常最快）
+      fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(clean))
+        .then(r => r.json())
+        .then(d => {
+          const ec = d && d.ec;
+          const w = ec && ec.word && ec.word[0];
+          if (!w) { dictCn.innerHTML = ''; return; }
+          const phone = w.usphone || w.ukphone;
+          if (phone && !dictPhonetic.textContent) dictPhonetic.textContent = '美 /' + phone + '/';
+          const lines = (w.trs || []).map(tr => (tr && tr[0]) || '').filter(Boolean);
+          currentCard.zh = lines.join('；');
+          dictCn.innerHTML = '';
+          if (!lines.length) return;
+          const title = document.createElement('div');
+          title.className = 'dict-pos';
+          title.textContent = '中文释义';
+          dictCn.appendChild(title);
+          lines.slice(0, 8).forEach((t, i) => {
+            const def = document.createElement('div');
+            def.className = 'dict-def';
+            const num = document.createElement('span');
+            num.className = 'num';
+            num.textContent = (i + 1) + '.';
+            def.appendChild(num);
+            def.appendChild(document.createTextNode(t.replace(/^[a-z]+\.\s*/i, '')));
+            dictCn.appendChild(def);
+          });
+        })
+        .catch(() => { dictCn.innerHTML = ''; });
 
-      fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(clean), { signal: controller.signal })
-        .then(res => { if (!res.ok) throw new Error('not found'); return res.json(); })
+      // 2) 英文释义（dictionaryapi，经 Worker 代理）
+      fetch(WORKER + '/v1/dict?word=' + encodeURIComponent(clean))
+        .then(res => { if (!res.ok) throw new Error('nf'); return res.json(); })
         .then(data => {
-          clearTimeout(timer);
           const entry = data[0] || {};
           const phonetics = entry.phonetics || [];
           const audio = (phonetics.map(p => p.audio).find(Boolean)) || '';
           const phoneticText = entry.phonetic || ((phonetics.find(p => p.text) || {}).text || '');
-          currentCard = { word: clean, phonetic: phoneticText, meanings: entry.meanings || [], audio };
-          renderDict(clean, phoneticText, entry.meanings || []);
+          if (phoneticText && !dictPhonetic.textContent) dictPhonetic.textContent = phoneticText;
+          currentCard.phonetic = currentCard.phonetic || phoneticText;
+          currentCard.meanings = entry.meanings || [];
+          currentCard.audio = audio;
+          renderDict(currentCard.meanings);
         })
-        .catch(() => {
-          clearTimeout(timer);
-          fetchDatamuse(clean);
-        });
+        .catch(() => { dictMeanings.innerHTML = ''; });
     }
 
-    function renderDict(word, phonetic, meanings) {
-      dictPhonetic.textContent = phonetic;
+    function renderDict(meanings) {
       dictMeanings.innerHTML = '';
+      if (!meanings.length) return;
+      const title = document.createElement('div');
+      title.className = 'dict-pos';
+      title.textContent = '英文释义';
+      title.style.marginTop = '10px';
+      dictMeanings.appendChild(title);
       meanings.forEach(m => {
         const wrap = document.createElement('div');
         wrap.className = 'dict-meaning';
@@ -1515,7 +1550,7 @@
         pos.className = 'dict-pos';
         pos.textContent = m.partOfSpeech || '';
         wrap.appendChild(pos);
-        (m.definitions || []).slice(0, 4).forEach((d, di) => {
+        (m.definitions || []).slice(0, 3).forEach((d, di) => {
           const def = document.createElement('div');
           def.className = 'dict-def';
           const num = document.createElement('span');
@@ -1524,13 +1559,6 @@
           def.appendChild(num);
           def.appendChild(document.createTextNode(d.definition || ''));
           wrap.appendChild(def);
-          if (d.definition) {
-            const cn = document.createElement('div');
-            cn.className = 'dict-def-cn';
-            cn.textContent = '中文：…';
-            wrap.appendChild(cn);
-            translateToCn(d.definition).then(t => { cn.textContent = t ? ('中文：' + t) : ''; });
-          }
           if (d.example) {
             const ex = document.createElement('div');
             ex.className = 'dict-example';
@@ -1540,28 +1568,6 @@
         });
         dictMeanings.appendChild(wrap);
       });
-      if (!meanings.length) dictMeanings.innerHTML = '<div style="color:var(--sec)">未查到释义</div>';
-    }
-
-    // 中文翻译（优先 Google 翻译，回退 MyMemory，均免费无 key）
-    function translateToCn(text) {
-      return fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=' + encodeURIComponent(text))
-        .then(r => r.json())
-        .then(d => {
-          const segs = (d && d[0]) || [];
-          const t = segs.map(s => (s && s[0]) || '').join('');
-          if (t && t !== text) return t;
-          throw new Error('empty');
-        })
-        .catch(() => {
-          return fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|zh-CN')
-            .then(r => r.json())
-            .then(d => {
-              const t = d && d.responseData && d.responseData.translatedText;
-              return (t && t !== text) ? t : '';
-            })
-            .catch(() => '');
-        });
     }
 
     // 备用词典源（Datamuse，无音标/发音，但稳定）
@@ -1822,7 +1828,16 @@
     async function doSaveToObsidian(word) {
       const cfg = getObsidianConfig();
       if (!cfg || !cfg.vault || !cfg.note) return;
-      const zh = await translateToCn(word);
+      // 中文释义：优先用词典弹窗里已查到的（有道），没有则现查
+      let zh = (currentCard && currentCard.word === word && currentCard.zh) ? currentCard.zh : '';
+      if (!zh) {
+        try {
+          const r = await fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(word));
+          const d = await r.json();
+          const w = d && d.ec && d.ec.word && d.ec.word[0];
+          if (w) zh = (w.trs || []).map(t => (t && t[0]) || '').filter(Boolean).join('；').replace(/^[a-z]+\.\s*/i, '');
+        } catch (e) {}
+      }
       const template = cfg.template || OBSIDIAN_TEMPLATE;
       const line = template.replace('{word}', word).replace('{zh}', zh || '').replace(/\s*：\s*$/, '') + '\n';
       await copyText(line);
