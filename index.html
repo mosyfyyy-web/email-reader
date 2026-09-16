@@ -115,22 +115,19 @@
       flex: 1;
       min-width: 0;
       overflow: hidden;
-      transition: max-height 0.28s ease, opacity 0.2s ease;
-      max-height: 300px;
+      transition: max-height 0.28s ease;
+      max-height: 400px;
     }
-    .sections-row.collapsed .sections { max-height: 0; opacity: 0; padding: 0; }
     .sections-toggle {
       background: none; border: none;
       color: var(--sec);
       cursor: pointer;
-      padding: 5px 4px;
+      padding: 5px 2px;
       flex-shrink: 0;
       display: inline-flex; align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent;
     }
     .sections-toggle:active { opacity: 0.5; }
-    .sections-toggle svg { transform: rotate(90deg); transition: transform 0.25s ease; }
-    .sections-row.collapsed .sections-toggle svg { transform: rotate(0deg); }
     .section-btn {
       padding: 6px 13px;
       border-radius: 16px;
@@ -233,8 +230,7 @@
     .email-list {
       position: fixed;
       top: 0; right: 0; bottom: 0;
-      width: max(190px, 25vw);
-      max-width: 320px;
+      width: max(200px, 33vw);
       background: var(--bg);
       border-left: 0.5px solid var(--divider);
       transform: translateX(101%);
@@ -420,7 +416,7 @@
       .container { flex: 1; min-width: 0; }
       .email-list {
         position: static; transform: none;
-        width: 25vw; min-width: 240px; max-width: 340px; height: 100vh;
+        width: 33vw; min-width: 240px; height: 100vh;
         border-left: 0.5px solid var(--divider);
         padding-top: 0; padding-bottom: 0;
         box-shadow: none;
@@ -461,9 +457,7 @@
 
       <div class="sections-row" id="sectionsRow">
         <div class="sections" id="sectionsContainer"></div>
-        <button class="sections-toggle" id="sectionsToggle" title="收起/展开小标题">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
+        <button class="sections-toggle" id="sectionsToggle" title="收起/展开小标题"></button>
       </div>
 
       <main class="content-area">
@@ -481,11 +475,11 @@
         <div class="transport">
           <button class="t-btn speed" id="speedBtn" title="倍速"><span id="speedDisplay">1.0x</span></button>
           <button class="t-btn skip" id="rewindBtn" title="后退10秒">
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.75 6 A7.5 7.5 0 1 0 8.25 6"/><path d="M10.6 3.7 L8.2 6 L10.6 8.3"/><text x="12" y="15.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.75 5.505 A7.5 7.5 0 1 1 8.25 5.505"/><path d="M10.7 3.5 L7.95 5.505 L10.7 7.5"/><text x="12" y="14.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn play" id="playBtn" title="播放"><span id="playIcon"></span></button>
           <button class="t-btn skip" id="forwardBtn" title="前进10秒">
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8.25 6 A7.5 7.5 0 1 1 15.75 6"/><path d="M13.4 3.7 L15.8 6 L13.4 8.3"/><text x="12" y="15.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.75 5.505 A7.5 7.5 0 1 1 8.25 5.505"/><path d="M13.3 3.5 L16.05 5.505 L13.3 7.5"/><text x="12" y="14.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn timer" id="timerBtn" title="定时">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>
@@ -1120,6 +1114,7 @@
         });
         sectionsContainer.appendChild(btn);
       });
+      updateSectionsToggle();
 
       // 正文：按段落渲染 <p>
       textContent.innerHTML = '';
@@ -1186,12 +1181,12 @@
     const TTS_API = {
       url: WORKER + '/v1/audio/speech',
       model: 'tts-1',
-      voice: 'alloy',
-      voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
       enabled: true
     };
     let apiVoice = 'nova';
     let usingApi = false;
+    // 字幕与声音的微调：正值字幕提前，负值字幕延后（占一个分块时长的比例）
+    let SYNC_OFFSET = 0;
 
     let apiAudio = null;
     let apiChunks = [];
@@ -1199,6 +1194,22 @@
     let apiNext = null;
 
     // 按句切块：块越小，字幕与声音的误差越小
+    // cum[i] = 读到第 i 个词时，应处于本块时长的百分比（按字符长度加权）
+    function makeChunk(startWord, endWord) {
+      const ws = allWords.slice(startWord, endWord + 1);
+      const lens = ws.map(w => Math.max(1, w.text.length));
+      let total = 0;
+      lens.forEach(l => { total += l; });
+      const cum = [];
+      let acc = 0;
+      for (let k = 0; k < lens.length; k++) { acc += lens[k]; cum.push(acc / total); }
+      return {
+        startWord, endWord,
+        text: joinWords(ws.map(x => x.text)),
+        cum: cum
+      };
+    }
+
     function buildApiChunks() {
       const chunks = [];
       let startWord = 0;
@@ -1209,12 +1220,12 @@
         const isEnd = /[。！？!?.…；;]/.test(w.text);
         // 遇到句末就断开（最短 8 字符，避免碎片过多）
         if (isEnd && (len >= 8 || i === allWords.length - 1)) {
-          chunks.push({ startWord, endWord: i, text: joinWords(allWords.slice(startWord, i + 1).map(x => x.text)) });
+          chunks.push(makeChunk(startWord, i));
           startWord = i + 1;
           len = 0;
         }
       }
-      if (startWord < allWords.length) chunks.push({ startWord, endWord: allWords.length - 1, text: joinWords(allWords.slice(startWord).map(x => x.text)) });
+      if (startWord < allWords.length) chunks.push(makeChunk(startWord, allWords.length - 1));
       return chunks;
     }
 
@@ -1236,13 +1247,17 @@
     function playChunkAudio(chunk, url) {
       const audio = new Audio(url);
       apiAudio = audio;
-      const wordCount = chunk.endWord - chunk.startWord + 1;
       audio.ontimeupdate = () => {
         // 用局部 audio 引用，避免切到下一段时旧回调把字幕拉回去
         if (apiAudio !== audio || mode !== 'playing') return;
         if (!audio.duration || !isFinite(audio.duration)) return;
-        const ratio = Math.min(1, audio.currentTime / audio.duration);
-        const wi = chunk.startWord + Math.floor(ratio * wordCount);
+        let ratio = Math.min(1, audio.currentTime / audio.duration);
+        ratio = Math.max(0, Math.min(1, ratio + SYNC_OFFSET));
+        // 按字符加权的累计占比查找当前词
+        let k = 0;
+        const cum = chunk.cum;
+        while (k < cum.length - 1 && cum[k] < ratio) k++;
+        const wi = chunk.startWord + k;
         const progress = (wi / allWords.length) * 100;
         setHighlight(wi, progress);
         progressBar.value = progress;
@@ -1889,9 +1904,24 @@
     });
 
     listToggleBtn.addEventListener('click', toggleList);
+
+    // 小标题栏收缩：第一行始终保留，只收起后面的行
+    const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l-6 6 6 6"/></svg>';
+    const ICON_EXPAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    let sectionsCollapsed = false;
+    function firstRowHeight() {
+      const chip = sectionsContainer.querySelector('.section-btn');
+      return chip ? Math.ceil(chip.getBoundingClientRect().height) : 30;
+    }
+    function updateSectionsToggle() {
+      sectionsToggle.innerHTML = sectionsCollapsed ? ICON_EXPAND : ICON_COLLAPSE;
+      sectionsContainer.style.maxHeight = sectionsCollapsed ? (firstRowHeight() + 'px') : '400px';
+    }
     sectionsToggle.addEventListener('click', () => {
-      sectionsRow.classList.toggle('collapsed');
+      sectionsCollapsed = !sectionsCollapsed;
+      updateSectionsToggle();
     });
+    updateSectionsToggle();
     // 封面缩放：FLIP 动画，从左上角平滑移动到中间并放大（而非消失后重现）
     artBtn.addEventListener('click', () => {
       const app = document.querySelector('.app');
