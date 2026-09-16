@@ -101,13 +101,36 @@
     .app.focus .title { white-space: normal; font-size: 20px; }
 
     /* ===== 段落标签（换行，不横向滚动） ===== */
+    .sections-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 2px 12px 10px 20px;
+      flex-shrink: 0;
+    }
     .sections {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      padding: 2px 20px 10px;
-      flex-shrink: 0;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      transition: max-height 0.28s ease, opacity 0.2s ease;
+      max-height: 300px;
     }
+    .sections-row.collapsed .sections { max-height: 0; opacity: 0; padding: 0; }
+    .sections-toggle {
+      background: none; border: none;
+      color: var(--sec);
+      cursor: pointer;
+      padding: 5px 4px;
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sections-toggle:active { opacity: 0.5; }
+    .sections-toggle svg { transform: rotate(90deg); transition: transform 0.25s ease; }
+    .sections-row.collapsed .sections-toggle svg { transform: rotate(0deg); }
     .section-btn {
       padding: 6px 13px;
       border-radius: 16px;
@@ -210,7 +233,8 @@
     .email-list {
       position: fixed;
       top: 0; right: 0; bottom: 0;
-      width: min(330px, 84vw);
+      width: max(190px, 25vw);
+      max-width: 320px;
       background: var(--bg);
       border-left: 0.5px solid var(--divider);
       transform: translateX(101%);
@@ -396,7 +420,7 @@
       .container { flex: 1; min-width: 0; }
       .email-list {
         position: static; transform: none;
-        width: 340px; height: 100vh;
+        width: 25vw; min-width: 240px; max-width: 340px; height: 100vh;
         border-left: 0.5px solid var(--divider);
         padding-top: 0; padding-bottom: 0;
         box-shadow: none;
@@ -435,7 +459,12 @@
         </div>
       </div>
 
-      <div class="sections" id="sectionsContainer"></div>
+      <div class="sections-row" id="sectionsRow">
+        <div class="sections" id="sectionsContainer"></div>
+        <button class="sections-toggle" id="sectionsToggle" title="收起/展开小标题">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
 
       <main class="content-area">
         <div class="text-content" id="textContent"></div>
@@ -452,11 +481,11 @@
         <div class="transport">
           <button class="t-btn speed" id="speedBtn" title="倍速"><span id="speedDisplay">1.0x</span></button>
           <button class="t-btn skip" id="rewindBtn" title="后退10秒">
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 A8 8 0 1 0 20 13"/><path d="M12 2.4 L8.6 5 L12 7.6"/><text x="12" y="16.8" text-anchor="middle" font-size="6.5" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.75 6 A7.5 7.5 0 1 0 8.25 6"/><path d="M10.6 3.7 L8.2 6 L10.6 8.3"/><text x="12" y="15.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn play" id="playBtn" title="播放"><span id="playIcon"></span></button>
           <button class="t-btn skip" id="forwardBtn" title="前进10秒">
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 A8 8 0 1 1 4 13"/><path d="M12 2.4 L15.4 5 L12 7.6"/><text x="12" y="16.8" text-anchor="middle" font-size="6.5" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8.25 6 A7.5 7.5 0 1 1 15.75 6"/><path d="M13.4 3.7 L15.8 6 L13.4 8.3"/><text x="12" y="15.3" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-weight="700" font-family="-apple-system,sans-serif">10</text></svg>
           </button>
           <button class="t-btn timer" id="timerBtn" title="定时">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>
@@ -568,6 +597,8 @@
     const artBtn = document.getElementById('artBtn');
     const imgPlaceholder = document.getElementById('imgPlaceholder');
     const sectionsContainer = document.getElementById('sectionsContainer');
+    const sectionsRow = document.getElementById('sectionsRow');
+    const sectionsToggle = document.getElementById('sectionsToggle');
     const emailList = document.getElementById('emailList');
     const listBackdrop = document.getElementById('listBackdrop');
     const listToggleBtn = document.getElementById('listToggleBtn');
@@ -1167,6 +1198,7 @@
     let apiChunkIndex = -1;
     let apiNext = null;
 
+    // 按句切块：块越小，字幕与声音的误差越小
     function buildApiChunks() {
       const chunks = [];
       let startWord = 0;
@@ -1175,7 +1207,8 @@
         const w = allWords[i];
         len += w.text.length + 1;
         const isEnd = /[。！？!?.…；;]/.test(w.text);
-        if (isEnd && (len >= 30 || i === allWords.length - 1)) {
+        // 遇到句末就断开（最短 8 字符，避免碎片过多）
+        if (isEnd && (len >= 8 || i === allWords.length - 1)) {
           chunks.push({ startWord, endWord: i, text: joinWords(allWords.slice(startWord, i + 1).map(x => x.text)) });
           startWord = i + 1;
           len = 0;
@@ -1856,6 +1889,9 @@
     });
 
     listToggleBtn.addEventListener('click', toggleList);
+    sectionsToggle.addEventListener('click', () => {
+      sectionsRow.classList.toggle('collapsed');
+    });
     // 封面缩放：FLIP 动画，从左上角平滑移动到中间并放大（而非消失后重现）
     artBtn.addEventListener('click', () => {
       const app = document.querySelector('.app');
