@@ -569,7 +569,7 @@
     let emailData = {};
     try {
       const raw = params.get('data');
-      emailData = raw ? JSON.parse(decodeURIComponent(raw)) : {};
+      emailData = raw ? JSON.parse(raw) : {};
     } catch (e) { emailData = {}; }
 
     // ==================== DOM 引用 ====================
@@ -1192,6 +1192,13 @@
     let apiChunks = [];
     let apiChunkIndex = -1;
     let apiNext = null;
+    let playbackSession = 0;
+    const activeObjectUrls = new Set();
+    function releaseAudioUrl(url) {
+      if (!url) return;
+      try { URL.revokeObjectURL(url); } catch (e) {}
+      activeObjectUrls.delete(url);
+    }
 
     // 按句切块：块越小，字幕与声音的误差越小
     // cum[i] = 读到第 i 个词时，应处于本块时长的百分比（按字符长度加权）
@@ -1230,16 +1237,22 @@
     }
 
     function synthesize(text) {
+      const ctl = new AbortController();
+      const timeout = setTimeout(() => ctl.abort(), 30000);
       return fetch(TTS_API.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: TTS_API.model, input: text, voice: apiVoice, response_format: 'mp3', speed: speed })
+        body: JSON.stringify({ model: TTS_API.model, input: text, voice: apiVoice, response_format: 'mp3', speed: speed }),
+        signal: ctl.signal
       }).then(res => { if (!res.ok) throw new Error('TTS ' + res.status); return res.blob(); })
-        .then(blob => URL.createObjectURL(blob));
+        .finally(() => clearTimeout(timeout))
+        .then(blob => { const url = URL.createObjectURL(blob); activeObjectUrls.add(url); return url; });
     }
 
     function stopApi() {
+      playbackSession++;
       if (apiAudio) { try { apiAudio.pause(); apiAudio.src = ''; } catch (e) {} apiAudio = null; }
+      activeObjectUrls.forEach(releaseAudioUrl);
       apiNext = null;
       apiChunkIndex = -1;
     }
@@ -1263,8 +1276,8 @@
         progressBar.value = progress;
         progressBar.style.setProperty('--progress', progress + '%');
       };
-      audio.onended = () => { if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
-      audio.onerror = () => { if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
+      audio.onended = () => { const u = audio.src; releaseAudioUrl(u); if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
+      audio.onerror = () => { const u = audio.src; releaseAudioUrl(u); if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
       audio.play().catch(() => {
         // iOS 拦截自动播放：不要启动视觉计时器（否则字幕会跑到声音前面），只提示
         if (mode === 'playing') {
@@ -1293,11 +1306,11 @@
 
       const ni = idx + 1;
       if (ni < apiChunks.length && (!apiNext || apiNext.index !== ni)) {
-        synthesize(apiChunks[ni].text).then(u => { apiNext = { index: ni, url: u }; }).catch(() => {});
+        synthesize(apiChunks[ni].text).then(u => { if (session === playbackSession && mode === 'playing') apiNext = { index: ni, url: u }; else releaseAudioUrl(u); }).catch(() => {});
       }
 
       urlP.then(url => {
-        if (mode !== 'playing' || apiChunkIndex !== idx) return;
+        if (session !== playbackSession || mode !== 'playing' || apiChunkIndex !== idx) { releaseAudioUrl(url); return; }
         playChunkAudio(chunk, url);
       }).catch(() => {
         if (mode === 'playing') { stopPlayback(); showHint('语音合成失败，请重试'); }
@@ -1307,6 +1320,7 @@
     function startApiPlayback() {
       usingApi = true;
       stopApi();
+      const session = playbackSession;
       apiChunks = buildApiChunks();
       let startIdx = 0;
       for (let i = 0; i < apiChunks.length; i++) {
@@ -2013,7 +2027,10 @@
             const raw = [];
             (w.trs || []).forEach(item => {
               (item && item.tr || []).forEach(t => {
-                if (t && t.l && t.l.i) t.l.i.forEach(s => { if (s) raw.push(String(s)); });
+                if (t && t.l && t.l.i) {
+                  const values = Array.isArray(t.l.i) ? t.l.i : [t.l.i];
+                  values.forEach(s => { if (s) raw.push(String(s)); });
+                }
               });
             });
             zh = raw.map(s => s.replace(/^[a-z]+\.\s*/i, '').trim()).filter(Boolean).join('；');
@@ -2114,7 +2131,7 @@
       const rawId = params.get('id');
       const rawUrl = params.get('url');
       if (rawData) {
-        try { setEmails(normalizeInput(JSON.parse(decodeURIComponent(rawData)))); }
+        try { setEmails(normalizeInput(JSON.parse(rawData))); }
         catch (e) { episodeTitle.textContent = '数据解析失败'; showHint('数据解析失败，请检查传入的 JSON'); }
       } else if (rawId) {
         // 短 ID 方案：内容存在 Worker，这里取回来
@@ -2127,8 +2144,7 @@
             const sender = params.get('sender');
             const subject = params.get('subject');
             setEmails([makeEmail(parsed, {
-              senderName: sender ? decodeURIComponent(sender) : '',
-              subject: subject ? decodeURIComponent(subject) : ''
+              senderName: sender || '', subject: subject || ''
             })]);
           })
           .catch(() => {
@@ -2137,28 +2153,26 @@
           });
       } else if (rawB64) {
         try {
-          const parsed = parseContent(b64DecodeUtf8(decodeURIComponent(rawB64)));
+          const parsed = parseContent(b64DecodeUtf8(rawB64));
           const sender = params.get('sender');
           const subject = params.get('subject');
           setEmails([makeEmail(parsed, {
-            senderName: sender ? decodeURIComponent(sender) : '',
-            subject: subject ? decodeURIComponent(subject) : ''
+              senderName: sender || '', subject: subject || ''
           })]);
         }
         catch (e) { showHint('文本解析失败'); }
       } else if (rawText) {
         try {
-          const parsed = parseContent(decodeURIComponent(rawText));
+          const parsed = parseContent(rawText);
           const sender = params.get('sender');
           const subject = params.get('subject');
           setEmails([makeEmail(parsed, {
-            senderName: sender ? decodeURIComponent(sender) : '',
-            subject: subject ? decodeURIComponent(subject) : ''
+              senderName: sender || '', subject: subject || ''
           })]);
         }
         catch (e) { showHint('文本解析失败'); }
       } else if (rawUrl) {
-        loadFromUrl(decodeURIComponent(rawUrl));
+        loadFromUrl(rawUrl);
       } else {
         episodeTitle.textContent = '请传入邮件数据，或点击「导入」读取文本/链接';
         renderSenders();
