@@ -432,13 +432,13 @@
     <div class="container">
       <header class="topbar">
         <div class="topbar-actions">
-          <button class="icon-btn" id="importBtn" title="导入">
+          <button class="icon-btn" id="importBtn" title="导入" aria-label="导入">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
           </button>
-          <button class="icon-btn" id="voiceBtn" title="选择声音">
+          <button class="icon-btn" id="voiceBtn" title="选择声音" aria-label="选择声音">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6a8 8 0 0 1 0 12"/></svg>
           </button>
-          <button class="icon-btn" id="listToggleBtn" title="邮件列表">
+          <button class="icon-btn" id="listToggleBtn" title="邮件列表" aria-label="邮件列表">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
         </div>
@@ -457,7 +457,7 @@
 
       <div class="sections-row" id="sectionsRow">
         <div class="sections" id="sectionsContainer"></div>
-        <button class="sections-toggle" id="sectionsToggle" title="收起/展开小标题"></button>
+        <button class="sections-toggle" id="sectionsToggle" title="收起/展开小标题" aria-label="收起或展开小标题"></button>
       </div>
 
       <main class="content-area">
@@ -642,6 +642,8 @@
     let paragraphRanges = [];       // [{start, end}] 词下标区间
     let sectionRanges = [];
     let currentWordIndex = 0;
+    let lastRenderedWordIndex = -1;
+    let scrollRequest = 0;
     let mode = 'stopped';
     let estimatedDuration = 60;
     let utterance = null;
@@ -1141,6 +1143,7 @@
       textContent.appendChild(frag);
 
       currentWordIndex = 0;
+      lastRenderedWordIndex = -1;
       progressBar.value = 0;
       progressBar.style.setProperty('--progress', '0%');
       setHighlight(0, 0);
@@ -1151,13 +1154,16 @@
       currentWordIndex = wordIndex;
 
       const words = textContent.querySelectorAll('.word');
-      words.forEach((w, i) => w.classList.toggle('read', i <= wordIndex));
+      if (wordIndex !== lastRenderedWordIndex) {
+        words.forEach((w, i) => w.classList.toggle('read', i <= wordIndex));
+        lastRenderedWordIndex = wordIndex;
+      }
 
       if (words[wordIndex]) {
         const rect = words[wordIndex].getBoundingClientRect();
         const container = textContent.parentElement.getBoundingClientRect();
         if (rect.top < container.top || rect.bottom > container.bottom) {
-          words[wordIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (!scrollRequest) scrollRequest = setTimeout(() => { scrollRequest = 0; if (words[wordIndex]) words[wordIndex].scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 120);
         }
       }
 
@@ -1183,6 +1189,11 @@
 
     // ==================== 播放控制 ====================
     const WORKER = 'https://shiny-lake-6597.mosyfyyy.workers.dev';
+    function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, Object.assign({}, options, { signal: controller.signal })).finally(() => clearTimeout(timer));
+    }
     const TTS_API = {
       url: WORKER + '/v1/audio/speech',
       model: 'tts-1',
@@ -1600,7 +1611,7 @@
     async function loadFromUrl(url) {
       // 经 Worker 代理抓取，绕开跨域和网络限制
       try {
-        const res = await fetch(WORKER + '/v1/fetch?url=' + encodeURIComponent(url));
+        const res = await fetchWithTimeout(WORKER + '/v1/fetch?url=' + encodeURIComponent(url));
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const text = await res.text();
         if (!text || text.length < 50) throw new Error('empty');
@@ -1671,7 +1682,7 @@
       currentCard = { word: clean, phonetic: '', meanings: [], audio: '', zh: '' };
 
       // 一次请求拿全：中文释义(ec) + 英文释义(ee) + 音标
-      fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(clean))
+      fetchWithTimeout(WORKER + '/v1/youdao?word=' + encodeURIComponent(clean))
         .then(r => r.json())
         .then(d => {
           // 音标
@@ -2047,7 +2058,7 @@
       let zh = (currentCard && currentCard.word === word && currentCard.zh) ? currentCard.zh : '';
       if (!zh) {
         try {
-          const r = await fetch(WORKER + '/v1/youdao?word=' + encodeURIComponent(word));
+          const r = await fetchWithTimeout(WORKER + '/v1/youdao?word=' + encodeURIComponent(word));
           const d = await r.json();
           const w = d && d.ec && d.ec.word && d.ec.word[0];
           if (w) {
