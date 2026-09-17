@@ -647,6 +647,7 @@
     let utterance = null;
     let speechStartChar = 0;
     let fallbackRAF = null;
+    let usingFallback = false;
     let fallbackStartTime = 0;
     let fallbackStartProgress = 0;
     const selectedWords = new Set();
@@ -1348,11 +1349,13 @@
       if (fallbackRAF) cancelAnimationFrame(fallbackRAF);
       fallbackRAF = null;
       utterance = null;
+      usingFallback = false;
       mode = 'stopped';
       updatePlayButton();
     }
     function startFallback() {
       usingApi = false;
+      usingFallback = true;
       stopApi();
       if (supportsTts) { try { speechSynthesis.cancel(); } catch (e) {} }
       if (fallbackRAF) cancelAnimationFrame(fallbackRAF);
@@ -1426,11 +1429,11 @@
         speechSynthesis.speak(utterance);
         updatePlayButton();
         setTimeout(() => {
-          if (mode === 'playing' && !boundaryFired) {
+          if (mode === 'playing' && !boundaryFired && !speechSynthesis.speaking && !speechSynthesis.pending) {
             startFallback();
             showHint('未检测到可用语音，已切换为视觉播放');
           }
-        }, 2500);
+        }, 6000);
       } catch (e) {
         startFallback();
       }
@@ -1442,7 +1445,7 @@
         if (apiAudio) { try { apiAudio.pause(); } catch (e) {} }
       } else if (supportsTts) {
         try { speechSynthesis.pause(); } catch (e) {}
-      } else if (fallbackRAF) {
+      } else if (usingFallback) {
         cancelAnimationFrame(fallbackRAF); fallbackRAF = null;
       }
       updatePlayButton();
@@ -1459,6 +1462,9 @@
           apiChunkIndex--;
           playApiChunk();
         }
+      } else if (usingFallback) {
+        startFallback();
+        return;
       } else if (supportsTts) {
         try { speechSynthesis.resume(); } catch (e) {}
       } else {
@@ -1941,7 +1947,7 @@
       return chip ? Math.ceil(chip.getBoundingClientRect().height) : 30;
     }
     function updateSectionsToggle() {
-      sectionsToggle.innerHTML = sectionsCollapsed ? ICON_EXPAND : ICON_COLLAPSE;
+      sectionsToggle.innerHTML = sectionsCollapsed ? ICON_COLLAPSE : ICON_EXPAND;
       const buttons = sectionsContainer.querySelectorAll('.section-btn');
       const active = sectionsContainer.querySelector('.section-btn.active') || buttons[0];
       let activeRow = null;
