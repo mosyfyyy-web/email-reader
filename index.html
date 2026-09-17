@@ -1316,6 +1316,7 @@
       const chunk = apiChunks[apiChunkIndex];
       const idx = apiChunkIndex;
 
+      const session = playbackSession;
       let urlP;
       if (apiNext && apiNext.index === idx) { urlP = Promise.resolve(apiNext.url); apiNext = null; }
       else urlP = synthesize(chunk.text);
@@ -1593,9 +1594,10 @@
     }
     function setEmails(list, opts = {}) {
       const incoming = Array.isArray(list) ? list : [];
+      const key = e => [e.senderEmail || e.senderName, e.subject, (e.sections || []).map(s => s.content).join('')].join('|').slice(0, 4000);
       if (opts.keepHistory !== false && state.emails.length && incoming.length) {
-        const seen = new Set(incoming.map(e => e.id));
-        state.emails = incoming.concat(state.emails.filter(e => !seen.has(e.id)));
+        const seen = new Set(incoming.map(key));
+        state.emails = incoming.concat(state.emails.filter(e => !seen.has(key(e))));
       } else state.emails = incoming;
       saveEmails();
       state.senderFilter = null;
@@ -2164,7 +2166,11 @@
 
     (function init() {
       const saved = loadSavedEmails();
-      if (saved.length) state.emails = saved;
+      if (saved.length) {
+        const seen = new Set();
+        state.emails = saved.filter(e => { const k = [e.senderEmail || e.senderName, e.subject, (e.sections || []).map(s => s.content).join('')].join('|').slice(0, 4000); if (seen.has(k)) return false; seen.add(k); return true; });
+        saveEmails();
+      }
       const rawData = params.get('data');
       const rawText = params.get('text');
       const rawB64 = params.get('b64');
