@@ -422,7 +422,7 @@
         box-shadow: none;
         transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
       }
-      .email-list.collapsed { width: 0; border-left: none; overflow: hidden; }
+      .email-list.collapsed { width: 0; min-width: 0; border-left: none; overflow: hidden; visibility: hidden; pointer-events: none; }
       .list-backdrop { display: none; }
     }
   </style>
@@ -633,6 +633,9 @@
 
     // ==================== 状态 ====================
     const state = { emails: [], currentEmailIndex: 0, senderFilter: null, senders: [] };
+    const EMAIL_STORE_KEY = 'emailReaderEmailsV1';
+    function saveEmails() { try { localStorage.setItem(EMAIL_STORE_KEY, JSON.stringify(state.emails)); } catch (e) {} }
+    function loadSavedEmails() { try { const v = JSON.parse(localStorage.getItem(EMAIL_STORE_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
     let speed = 1.0;
     let fullText = '';
     let allWords = [];
@@ -1162,6 +1165,7 @@
         document.querySelectorAll('.section-btn').forEach((btn, i) => btn.classList.toggle('active', i === range.index));
         if (range.image) setEpisodeImage(range.image);
         else if (currentEmail() && currentEmail().imageUrl) setEpisodeImage(currentEmail().imageUrl);
+        if (sectionsCollapsed) updateSectionsToggle();
       }
 
       const p = (progress === undefined) ? (allWords.length ? (wordIndex / allWords.length) * 100 : 0) : progress;
@@ -1244,7 +1248,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: TTS_API.model, input: text, voice: apiVoice, response_format: 'mp3', speed: speed }),
         signal: ctl.signal
-      }).then(res => { if (!res.ok) throw new Error('TTS ' + res.status); return res.blob(); })
+      }).then(async res => { if (!res.ok) { const detail = await res.text().catch(() => ''); throw new Error('TTS ' + res.status + (detail ? ': ' + detail.slice(0, 160) : '')); } return res.blob(); })
         .finally(() => clearTimeout(timeout))
         .then(blob => { const url = URL.createObjectURL(blob); activeObjectUrls.add(url); return url; });
     }
@@ -1313,7 +1317,11 @@
         if (session !== playbackSession || mode !== 'playing' || apiChunkIndex !== idx) { releaseAudioUrl(url); return; }
         playChunkAudio(chunk, url);
       }).catch(() => {
-        if (mode === 'playing') { stopPlayback(); showHint('语音合成失败，请重试'); }
+        if (mode === 'playing') {
+          stopPlayback();
+          if (supportsTts) { showHint('云端语音失败，已切换设备语音'); startSiriPlayback('Samantha'); }
+          else showHint('语音合成失败，请重试');
+        }
       });
     }
 
@@ -1567,7 +1575,12 @@
       }
     }
     function setEmails(list, opts = {}) {
-      state.emails = Array.isArray(list) ? list : [];
+      const incoming = Array.isArray(list) ? list : [];
+      if (opts.keepHistory !== false && state.emails.length && incoming.length) {
+        const seen = new Set(incoming.map(e => e.id));
+        state.emails = incoming.concat(state.emails.filter(e => !seen.has(e.id)));
+      } else state.emails = incoming;
+      saveEmails();
       state.senderFilter = null;
       renderSenders();
       renderEmailList();
@@ -1929,7 +1942,15 @@
     }
     function updateSectionsToggle() {
       sectionsToggle.innerHTML = sectionsCollapsed ? ICON_EXPAND : ICON_COLLAPSE;
-      sectionsContainer.style.maxHeight = sectionsCollapsed ? (firstRowHeight() + 'px') : '400px';
+      const buttons = sectionsContainer.querySelectorAll('.section-btn');
+      const active = sectionsContainer.querySelector('.section-btn.active') || buttons[0];
+      let activeRow = null;
+      if (sectionsCollapsed && active) activeRow = active.offsetTop;
+      buttons.forEach(btn => {
+        const keep = !sectionsCollapsed || (activeRow !== null && btn.offsetTop === activeRow);
+        btn.style.display = keep ? '' : 'none';
+      });
+      sectionsContainer.style.maxHeight = sectionsCollapsed ? firstRowHeight() + 'px' : '400px';
     }
     sectionsToggle.addEventListener('click', () => {
       sectionsCollapsed = !sectionsCollapsed;
@@ -2125,6 +2146,8 @@
     }
 
     (function init() {
+      const saved = loadSavedEmails();
+      if (saved.length) state.emails = saved;
       const rawData = params.get('data');
       const rawText = params.get('text');
       const rawB64 = params.get('b64');
@@ -2174,7 +2197,8 @@
       } else if (rawUrl) {
         loadFromUrl(rawUrl);
       } else {
-        episodeTitle.textContent = '请传入邮件数据，或点击「导入」读取文本/链接';
+        if (state.emails.length) { renderSenders(); renderEmailList(); loadEmail(0, { autoplay: false }); }
+        else episodeTitle.textContent = '请传入邮件数据，或点击「导入」读取文本/链接';
         renderSenders();
         renderEmailList();
       }
