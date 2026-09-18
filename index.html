@@ -781,8 +781,12 @@
 
     // ==================== 声音选择 ====================
     const VOICE_OPTIONS = [
+      { id: 'alloy',    label: '女声 · AI (alloy)',    src: 'api' },
+      { id: 'echo',     label: '女声 · AI (echo)',     src: 'api' },
+      { id: 'fable',    label: '女声 · AI (fable)',    src: 'api' },
       { id: 'nova',     label: '女声 · AI (nova)',     src: 'api' },
       { id: 'onyx',     label: '男声 · AI (onyx)',     src: 'api' },
+      { id: 'shimmer',  label: '女声 · AI (shimmer)',  src: 'api' },
       { id: 'samantha', label: '女声 · Siri (Samantha)', src: 'siri' },
       { id: 'daniel',   label: '男声 · Siri (Daniel)',   src: 'siri' }
     ];
@@ -801,11 +805,16 @@
         item.className = 'voice-item' + (voicePref === v.id ? ' active' : '');
         item.textContent = v.label;
         item.addEventListener('click', () => {
+          const wasPlaying = mode === 'playing';
+          const wasPaused = mode === 'paused';
+          if (wasPlaying || wasPaused) stopPlayback();
           voicePref = v.id;
           try { localStorage.setItem('voicePref', v.id); } catch (e) {}
           renderVoices();
           voicePop.classList.remove('open');
           showHint('已切换：' + v.label);
+          if (wasPlaying) startPlayback();
+          else if (wasPaused) { startPlayback(); pausePlayback(); }
         });
         voiceList.appendChild(item);
       });
@@ -1987,9 +1996,10 @@
       const activeRow = sectionsCollapsed && active ? active.dataset.row : null;
       buttons.forEach(btn => {
         const keep = !sectionsCollapsed || (activeRow !== null && btn.dataset.row === activeRow);
-        btn.style.display = keep ? '' : 'none';
+        btn.style.visibility = keep ? 'visible' : 'hidden';
+        btn.style.pointerEvents = keep ? '' : 'none';
       });
-      sectionsContainer.style.maxHeight = sectionsCollapsed ? firstRowHeight() + 'px' : '400px';
+      sectionsContainer.style.maxHeight = sectionsCollapsed ? Math.min(400, sectionsContainer.scrollHeight) + 'px' : '400px';
     }
     sectionsToggle.addEventListener('click', () => {
       sectionsCollapsed = !sectionsCollapsed;
