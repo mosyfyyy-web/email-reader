@@ -115,7 +115,7 @@
       flex: 1;
       min-width: 0;
       overflow: hidden;
-      transition: max-height 0.28s ease;
+      transition: none;
       max-height: 400px;
     }
     .sections-toggle {
@@ -151,9 +151,10 @@
     .text-content {
       font-family: Georgia, 'Times New Roman', 'Songti SC', 'Noto Serif SC', 'SimSun', serif;
       font-size: 18px;
-      line-height: 1.9;
-      letter-spacing: -0.1px;
-      max-width: 90%;
+      line-height: 1.78;
+      letter-spacing: 0;
+      width: 100%;
+      max-width: 680px;
       margin: 0 auto;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -643,6 +644,7 @@
     let sectionRanges = [];
     let currentWordIndex = 0;
     let lastRenderedWordIndex = -1;
+    let activeSectionIndex = -1;
     let scrollRequest = 0;
     let mode = 'stopped';
     let estimatedDuration = 60;
@@ -1120,6 +1122,12 @@
         });
         sectionsContainer.appendChild(btn);
       });
+      let row = -1, lastTop = null;
+      sectionsContainer.querySelectorAll('.section-btn').forEach(btn => {
+        const top = btn.offsetTop;
+        if (top !== lastTop) { row++; lastTop = top; }
+        btn.dataset.row = String(row);
+      });
       updateSectionsToggle();
 
       // 正文：按段落渲染 <p>
@@ -1169,10 +1177,12 @@
 
       const range = sectionRanges.find(r => wordIndex >= r.start && wordIndex <= r.end);
       if (range) {
+        const sectionChanged = activeSectionIndex !== range.index;
         document.querySelectorAll('.section-btn').forEach((btn, i) => btn.classList.toggle('active', i === range.index));
+        activeSectionIndex = range.index;
         if (range.image) setEpisodeImage(range.image);
         else if (currentEmail() && currentEmail().imageUrl) setEpisodeImage(currentEmail().imageUrl);
-        if (sectionsCollapsed) updateSectionsToggle();
+        if (sectionsChanged && sectionsCollapsed) updateSectionsToggle();
       }
 
       const p = (progress === undefined) ? (allWords.length ? (wordIndex / allWords.length) * 100 : 0) : progress;
@@ -1189,6 +1199,9 @@
 
     // ==================== 播放控制 ====================
     const WORKER = 'https://shiny-lake-6597.mosyfyyy.workers.dev';
+    function isIPad() {
+      return /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
     function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -1237,15 +1250,18 @@
       const chunks = [];
       let startWord = 0;
       let len = 0;
+      let sentenceCount = 0;
       for (let i = 0; i < allWords.length; i++) {
         const w = allWords[i];
         len += w.text.length + 1;
         const isEnd = /[。！？!?.…；;]/.test(w.text);
-        // 遇到句末就断开（最短 8 字符，避免碎片过多）
-        if (isEnd && (len >= 8 || i === allWords.length - 1)) {
+        if (isEnd) sentenceCount++;
+        // 以句群为单位，减少短句切换造成的断气和语气跳跃
+        if (isEnd && (len >= 80 || sentenceCount >= 2 || len >= 220 || i === allWords.length - 1)) {
           chunks.push(makeChunk(startWord, i));
           startWord = i + 1;
           len = 0;
+          sentenceCount = 0;
         }
       }
       if (startWord < allWords.length) chunks.push(makeChunk(startWord, allWords.length - 1));
@@ -1275,6 +1291,10 @@
 
     function playChunkAudio(chunk, url) {
       const audio = new Audio(url);
+      audio.preload = 'auto';
+      audio.playsInline = true;
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
       apiAudio = audio;
       audio.ontimeupdate = () => {
         // 用局部 audio 引用，避免切到下一段时旧回调把字幕拉回去
@@ -1294,11 +1314,11 @@
       };
       audio.onended = () => { const u = audio.src; releaseAudioUrl(u); if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
       audio.onerror = () => { const u = audio.src; releaseAudioUrl(u); if (mode === 'playing' && apiAudio === audio) playApiChunk(); };
-      audio.play().catch(() => {
+      audio.play().catch((err) => {
         // iOS 拦截自动播放：不要启动视觉计时器（否则字幕会跑到声音前面），只提示
         if (mode === 'playing') {
           stopPlayback();
-          showHint('请点击播放按钮开始朗读');
+          showHint(isIPad() ? '请点击播放按钮开始朗读（iPad 需要手动启动）' : '请点击播放按钮开始朗读');
         }
       });
     }
@@ -1504,6 +1524,7 @@
     }
     function tryAutoplay() {
       if (!allWords.length) return;
+      if (isIPad()) { showHint('邮件已准备好，请点击播放按钮开始朗读'); return; }
       startPlayback();
       if (!usingApi && supportsTts) {
         setTimeout(() => {
@@ -1963,10 +1984,9 @@
       sectionsToggle.innerHTML = sectionsCollapsed ? ICON_COLLAPSE : ICON_EXPAND;
       const buttons = sectionsContainer.querySelectorAll('.section-btn');
       const active = sectionsContainer.querySelector('.section-btn.active') || buttons[0];
-      let activeRow = null;
-      if (sectionsCollapsed && active) activeRow = active.offsetTop;
+      const activeRow = sectionsCollapsed && active ? active.dataset.row : null;
       buttons.forEach(btn => {
-        const keep = !sectionsCollapsed || (activeRow !== null && btn.offsetTop === activeRow);
+        const keep = !sectionsCollapsed || (activeRow !== null && btn.dataset.row === activeRow);
         btn.style.display = keep ? '' : 'none';
       });
       sectionsContainer.style.maxHeight = sectionsCollapsed ? firstRowHeight() + 'px' : '400px';
